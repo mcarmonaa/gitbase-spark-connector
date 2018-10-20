@@ -2,18 +2,18 @@
 
 **gitbase-spark-connector** is a [Scala](https://www.scala-lang.org/) libraray that lets you expose [gitbase](https://www.github.com/src-d/gitbase) tables as [Spark SQL](https://spark.apache.org/sql/) Dataframes to run scalable analysis and processing pipelines on source code.
 
-# Pre-requisites
+## Pre-requisites
 
 * [Scala](https://www.scala-lang.org/) 2.11.12
 * [Apache Spark 2.3.2 Installation](http://spark.apache.org/docs/2.3.2)
 * [gitbase](https://github.com/src-d/gitbase) v0.17.0
 * [bblfsh](https://github.com/bblfsh/bblfshd) >= 2.9.1
 
-# Import as a dependency
+## Import as a dependency
 
 For the moment, it is served through jitpack so you can check out examples about how to import it in your project [here](https://jitpack.io/#src-d/gitbase-spark-connector).
 
-# Usage
+## Usage
 
 First of all, you'll need a [gitbase](https://www.github.com/src-d/gitbase) instance running. It will expose your repositories through a SQL interface.
 
@@ -66,3 +66,7 @@ Output:
 |refs/heads/HEAD/015da2f4-6d89-7ec8-5ac9-a38329ea875b                           |dbfab055c70379219cbcf422f05316fdf4e1aed3|2008-02-01 16:42:40|
 +-------------------------------------------------------------------------------+----------------------------------------+-------------------+
 ```
+
+## License
+
+Apache License 2.0, see [LICENSE](/LICENSE)
