@@ -10,14 +10,19 @@ class DefaultSourceSpec extends BaseGitbaseSpec {
   }
 
   it should "perform joins and filters" in {
-    val refs = spark.table("ref_commits")
-    val commits = spark.table("commits")
-
-    val df = refs
-      .join(commits, Seq("repository_id", "commit_hash"))
-      .filter(refs("history_index") === 0)
+    val df = spark.sql(
+      """
+        |SELECT * FROM ref_commits r
+        |INNER JOIN commits c
+        | ON r.repository_id = c.repository_id
+        | AND r.commit_hash = c.commit_hash
+        |WHERE r.history_index = 0
+      """.stripMargin)
 
     df.count() should be(56)
+    for (row <- df.collect()) {
+      row.length should be(15)
+    }
   }
 
   it should "get all the repositories where a specific user contributes on HEAD reference" in {
@@ -31,6 +36,7 @@ class DefaultSourceSpec extends BaseGitbaseSpec {
     rows.length should be(2)
     for (row <- rows) {
       row(0).asInstanceOf[String] should be("fff7062de8474d10a67d417ccea87ba6f58ca81d.siva")
+      row.length should be(2)
     }
   }
 
@@ -40,6 +46,9 @@ class DefaultSourceSpec extends BaseGitbaseSpec {
       " WHERE refs.ref_name REGEXP '^refs/heads/HEAD/'")
 
     df.count() should be(5)
+    for (row <- df.collect()) {
+      row.length should be(2)
+    }
   }
 
   it should "get the files in the first commit on HEAD history for all repositories" in {
@@ -52,6 +61,9 @@ class DefaultSourceSpec extends BaseGitbaseSpec {
       " AND r.history_index = 0")
 
     df.count() should be(459)
+    for (row <- df.collect()) {
+      row.length should be(2)
+    }
   }
 
   it should "get commits that appear in more than one reference" in {
@@ -63,6 +75,9 @@ class DefaultSourceSpec extends BaseGitbaseSpec {
       ") t WHERE num > 1")
 
     df.count() should be(1046)
+    for (row <- df.collect()) {
+      row.length should be(2)
+    }
   }
 
   it should "get commits that appear in more than one reference without natural join" in {
@@ -76,6 +91,9 @@ class DefaultSourceSpec extends BaseGitbaseSpec {
       ") t WHERE num > 1")
 
     df.count() should be(1046)
+    for (row <- df.collect()) {
+      row.length should be(2)
+    }
   }
 
   it should "get the number of blobs per head commit" in {
@@ -91,6 +109,9 @@ class DefaultSourceSpec extends BaseGitbaseSpec {
       " GROUP BY c.commit_hash")
 
     df.count() should be(985)
+    for (row <- df.collect()) {
+      row.length should be(2)
+    }
   }
 
   it should "get commits per commiter per month, in 2015" in {
@@ -114,6 +135,9 @@ class DefaultSourceSpec extends BaseGitbaseSpec {
     )
 
     df.count() should be(30)
+    for (row <- df.collect()) {
+      row.length should be(4)
+    }
   }
 
   it should "get files from first 6 commits from HEAD references that contain" +
@@ -150,6 +174,9 @@ class DefaultSourceSpec extends BaseGitbaseSpec {
       """.stripMargin)
 
     df.count() should be(0) // TODO(erizocosmico): this might not be correct
+    for (row <- df.collect()) {
+      row.length should be(4)
+    }
   }
 
   it should "extract information from uast udfs" in {
@@ -158,6 +185,9 @@ class DefaultSourceSpec extends BaseGitbaseSpec {
       "  \"internalRole\")" +
       " FROM files")
     df.count() should be(89214)
+    for (row <- df.collect()) {
+      row.length should be(2)
+    }
   }
 
 }

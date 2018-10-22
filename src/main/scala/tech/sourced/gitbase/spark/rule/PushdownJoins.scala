@@ -1,54 +1,114 @@
 package tech.sourced.gitbase.spark.rule
 
+import java.util.NoSuchElementException
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.{Inner, JoinType}
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
-import org.apache.spark.sql.types.{StructField, StructType}
+import org.apache.spark.sql.types.{Metadata, StructField, StructType}
 import tech.sourced.gitbase.spark._
 
 object PushdownJoins extends Rule[LogicalPlan] {
-  /** @inheritdoc */
-  def apply(plan: LogicalPlan): LogicalPlan = plan transformUp {
-    // Joins are only applicable per repository, so we can push down completely
-    // the join into the data source
-    case q: Join =>
-      val jd = JoinOptimizer.getJoinData(q)
-      if (!jd.valid) {
-        return q
-      }
+  /** @inheritdoc*/
+  def apply(plan: LogicalPlan): LogicalPlan = {
+    val schema = plan.schema
+    val result = plan transformUp {
+      // Joins are only applicable per repository, so we can push down completely
+      // the join into the data source
+      case q: Join =>
+        val jd = JoinOptimizer.getJoinData(q)
+        if (!jd.valid) {
+          return q
+        }
 
-      jd match {
-        case JoinData(Some(source), _, filters, projectExprs, attributes, servers, _) =>
-          val node = DataSourceV2Relation(
-            attributes,
-            DefaultReader(
-              servers,
-              JoinOptimizer.attributesToSchema(attributes),
-              source
+        jd match {
+          case JoinData(Some(source), _, filters, projectExprs, attributes, servers, _) =>
+            val node = DataSourceV2Relation(
+              attributes,
+              DefaultReader(
+                servers,
+                JoinOptimizer.attributesToSchema(attributes),
+                source
+              )
             )
+
+            val filteredNode = filters match {
+              case Some(filter) => Filter(filter, node)
+              case None => node
+            }
+
+            // If the projection is empty, project the original schema.
+            if (projectExprs.nonEmpty) {
+              Project(projectExprs, filteredNode)
+            } else {
+              Project(
+                attributes,
+                filteredNode
+              )
+            }
+          case _ => q
+        }
+
+      // Remove two consecutive projects and replace it with the outermost one.
+      case Project(list, Project(_, child)) =>
+        Project(list, child)
+    } transformUp {
+      // Deduplicate columns with the same name. Joined gitbase tables will
+      // always have the same value in columns with the same name, so it's
+      // safe to deduplicate.
+      case DataSourceV2Relation(out, DefaultReader(servers, _, source)) =>
+        val newOut = out.groupBy(_.name).values.map(_.head).toSeq
+        DataSourceV2Relation(
+          newOut,
+          DefaultReader(
+            servers,
+            JoinOptimizer.attributesToSchema(newOut),
+            source
           )
+        )
 
-          val filteredNode = filters match {
-            case Some(filter) => Filter(filter, node)
-            case None => node
+      // Since we deduplicated, it's possible that some Attributes are now not
+      // pointing to the correct deduplicated column. So we need to replace
+      // these attributes with the one that's available, trying to get the exact
+      // match if possible.
+      case n =>
+        import JoinOptimizer._
+        val availableAttrs: Seq[Attribute] = n.children.flatMap(child => {
+          child.find {
+            case _: Project => true
+            case DataSourceV2Relation(_, _: DefaultReader) => true
+            case _: Join => true
+            case _ => false
+          } match {
+            case Some(Project(attrs, _)) => attrs.map(_.toAttribute)
+            case Some(DataSourceV2Relation(output, _: DefaultReader)) => output
+            case _ => Seq()
           }
+        })
 
-          // If the projection is empty, just return the filter
-          if (projectExprs.nonEmpty) {
-            Project(projectExprs, filteredNode)
-          } else {
-            filteredNode
-          }
-        case _ => q
-      }
+        n.transformExpressionsUp {
+          case a: Attribute =>
+            val candidates = availableAttrs.filter(attr => attr.name == a.name
+              && hasSource(attr))
+            if (candidates.nonEmpty) {
+              val exactMatch = candidates.find(attr => getSource(a) == getSource(attr))
+              exactMatch match {
+                case Some(attr) => attr
+                case None => candidates.head
+              }
+            } else {
+              a
+            }
+          case x => x
+        }
+    }
 
-    // Remove two consecutive projects and replace it with the outermost one.
-    case Project(list, Project(_, child)) =>
-      Project(list, child)
+    result
   }
+
 }
 
 case class JoinData(source: Option[DataSource] = None,
@@ -63,6 +123,20 @@ case class JoinData(source: Option[DataSource] = None,
   * Support methods for optimizing [[DefaultReader]]s.
   */
 private[rule] object JoinOptimizer extends Logging {
+
+  private[rule] def hasSource(attr: Attribute): Boolean =
+    getSource(attr) != ""
+
+
+  private[rule] def getSource(attr: NamedExpression): String =
+    getSource(attr.metadata)
+
+  private[rule] def getSource(metadata: Metadata): String =
+    try {
+      metadata.getString(Sources.SourceKey)
+    } catch {
+      case _: NoSuchElementException => ""
+    }
 
   /**
     * Returns the data about a join to perform optimizations on it.
@@ -154,12 +228,6 @@ private[rule] object JoinOptimizer extends Logging {
     }.isDefined
   }
 
-  private def mergeAttributes(a: Seq[AttributeReference],
-                              b: Seq[AttributeReference]): Seq[AttributeReference] = {
-    val common = a.map(_.name).intersect(b.map(_.name))
-    a ++ b.filter(attr => !common.contains(attr.name))
-  }
-
   /**
     * Reduce all join data into one single join data.
     *
@@ -193,7 +261,7 @@ private[rule] object JoinOptimizer extends Logging {
         conditions,
         filters,
         jd1.project ++ jd2.project,
-        mergeAttributes(jd1.attributes, jd2.attributes),
+        jd1.attributes ++ jd2.attributes,
         (jd1.servers ++ jd2.servers).distinct,
         jd1.valid && jd2.valid
       )
@@ -226,11 +294,11 @@ private[rule] object JoinOptimizer extends Logging {
     */
   def getUnsupportedConditions(join: Join,
                                left: DataSourceV2Relation,
-                               right: DataSourceV2Relation): Set[_] = {
+                               right: DataSourceV2Relation): Set[Attribute] = {
     val leftReferences = left.references.baseSet
     val rightReferences = right.references.baseSet
     val joinReferences = join.references.baseSet
-    joinReferences -- leftReferences -- rightReferences
+    (joinReferences -- leftReferences -- rightReferences).map(_.a)
   }
 
   /**
@@ -277,7 +345,7 @@ private[rule] object JoinOptimizer extends Logging {
     lp.find {
       case DataSourceV2Relation(_, _: DefaultReader) => true
       case _ => false
-    } map(_.asInstanceOf[DataSourceV2Relation])
+    } map (_.asInstanceOf[DataSourceV2Relation])
 
   private def logUnableToOptimize(msg: String = ""): Unit = {
     logError("*" * 80)

@@ -47,7 +47,7 @@ class QueryBuilderSpec extends FlatSpec with Matchers {
 
     QueryBuilder(filters = Seq(
       EqualTo(mkAttr("foo", "bar"), Literal(1, IntegerType)),
-      EqualTo(mkAttr("foo", "bar"), Literal(2, IntegerType))
+      EqualTo(mkAttr("foo", "baz"), Literal(2, IntegerType))
     )).whereClause should be(s"WHERE ${qualify("foo", "bar")} = 1 AND ${qualify("foo", "baz")} = 2")
   }
 
@@ -63,7 +63,7 @@ class QueryBuilderSpec extends FlatSpec with Matchers {
         mkAttr("foo", "a"),
         mkAttr("bar", "a")
       ))
-    )).selectedTables should be("foo INNER JOIN bar ON foo.a = bar.a")
+    )).selectedTables should be("foo INNER JOIN bar ON foo.`a` = bar.`a`")
 
     QueryBuilder(source = JoinedSource(
       JoinedSource(
@@ -79,53 +79,73 @@ class QueryBuilderSpec extends FlatSpec with Matchers {
         mkAttr("foo", "a"),
         mkAttr("baz", "a")
       ))
-    )).selectedTables should be("foo INNER JOIN bar ON foo.a = bar.a " +
-      "INNER JOIN baz ON foo.a = baz.a")
+    )).selectedTables should be("foo INNER JOIN bar ON foo.`a` = bar.`a` " +
+      "INNER JOIN baz ON foo.`a` = baz.`a`")
   }
 
   "QueryBuilder.compileExpression" should "compile the expressions to SQL" in {
     val cases = Seq(
       (EqualTo(mkAttr("foo", "a"), Literal(1, IntegerType)),
-        "foo.a = 1"),
+        "foo.`a` = 1"),
 
       (EqualNullSafe(mkAttr("foo", "a"), Literal(1, IntegerType)),
-        s"(NOT (foo.a != 1 OR foo.a IS NULL OR 1 IS NULL) OR (foo.a IS NULL AND 1 IS NULL))"),
+        s"(NOT (foo.`a` != 1 OR foo.`a` IS NULL OR 1 IS NULL) OR (foo.`a` IS NULL AND 1 IS NULL))"),
 
       (LessThan(mkAttr("foo", "a"), Literal(1, IntegerType)),
-        s"foo.a < 1"),
+        s"foo.`a` < 1"),
 
       (GreaterThan(mkAttr("foo", "a"), Literal(1, IntegerType)),
-        s"foo.a > 1"),
+        s"foo.`a` > 1"),
 
       (LessThanOrEqual(mkAttr("foo", "a"), Literal(1, IntegerType)),
-        s"foo.a <= 1"),
+        s"foo.`a` <= 1"),
 
       (GreaterThanOrEqual(mkAttr("foo", "a"), Literal(1, IntegerType)),
-        s"foo.a >= 1"),
+        s"foo.`a` >= 1"),
 
       (IsNull(mkAttr("foo", "a")),
-        "foo.a IS NULL"),
+        "foo.`a` IS NULL"),
 
       (IsNotNull(mkAttr("foo", "a")),
-        "foo.a IS NOT NULL"),
+        "foo.`a` IS NOT NULL"),
 
       (In(mkAttr("foo", "a"), Seq[Expression]()),
-        "CASE WHEN foo.a IS NULL THEN NULL ELSE FALSE END"),
+        "CASE WHEN foo.`a` IS NULL THEN NULL ELSE FALSE END"),
 
       (In(mkAttr("foo", "a"), Seq(Literal(1, IntegerType), Literal(2, IntegerType))),
-        "foo.a IN (1, 2)"),
+        "foo.`a` IN (1, 2)"),
 
       (Not(EqualTo(mkAttr("foo", "a"), Literal(1, IntegerType))),
-        "(NOT (foo.a = 1))"),
+        "(NOT (foo.`a` = 1))"),
 
       (Or(EqualTo(mkAttr("foo", "a"), Literal(1, IntegerType)),
         EqualTo(mkAttr("foo", "b"), Literal(2, IntegerType))),
-        "(foo.a = 1) OR (foo.b = 2)"),
+        "(foo.`a` = 1) OR (foo.`b` = 2)"),
 
-      (And(
-        EqualTo(mkAttr("foo", "a"), Literal(1, IntegerType)),
-        EqualTo(mkAttr("foo", "b"), Literal(2, IntegerType))
-      ), "(foo.a = 1) AND (foo.b = 2)")
+      (RLike(mkAttr("foo", "a"), Literal("'foo'", StringType)),
+        "foo.`a` REGEXP 'foo'"),
+
+      (Year(mkAttr("foo", "a")), "YEAR(foo.`a`)"),
+
+      (Month(mkAttr("foo", "a")), "MONTH(foo.`a`)"),
+
+      (DayOfMonth(mkAttr("foo", "a")), "DAY(foo.`a`)"),
+
+      (DayOfYear(mkAttr("foo", "a")), "DAYOFYEAR(foo.`a`)"),
+
+      (Round(mkAttr("foo", "a"), Literal(1, IntegerType)), "ROUND(foo.`a`, 1)"),
+
+      (Ceil(mkAttr("foo", "a")), "CEIL(foo.`a`)"),
+
+      (Floor(mkAttr("foo", "a")), "FLOOR(foo.`a`)"),
+
+      (Substring(
+        mkAttr("foo", "a"),
+        Literal(1, IntegerType),
+        Literal(2, IntegerType)
+      ), "SUBSTRING(foo.`a`, 1, 2)"),
+
+      (Cast(mkAttr("foo", "a"), IntegerType, None), "CAST(foo.`a` AS INT)")
     )
 
     cases.foreach {

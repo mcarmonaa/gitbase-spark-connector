@@ -1,18 +1,18 @@
 package tech.sourced.gitbase.spark.udf
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.scalatest.{FlatSpec, Matchers, Suite}
 import tech.sourced.gitbase.spark.util
 import tech.sourced.gitbase.spark.rule
 
 trait BaseUdfSpec extends FlatSpec with Matchers { this: Suite =>
 
-  val spark = SparkSession.builder().appName("test")
+  val spark: SparkSession = SparkSession.builder().appName("test")
     .master("local[*]")
     .config("spark.driver.host", "localhost")
     .config(new SparkConf(false).setAll(util.defaultConfig))
-    .withExtensions(util.injectRules(rule.getAll()))
+    .withExtensions(util.injectRules(rule.getAll))
     .getOrCreate()
 
   import spark.implicits._
@@ -20,7 +20,7 @@ trait BaseUdfSpec extends FlatSpec with Matchers { this: Suite =>
 
   registerUDFs(spark)
 
-  val filesDf = filesRows.toDF(filesCols: _*)
+  val filesDf: DataFrame = filesRows.toDF(filesCols: _*)
   filesDf.createOrReplaceTempView(filesName)
 
 }

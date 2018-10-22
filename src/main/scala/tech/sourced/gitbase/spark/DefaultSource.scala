@@ -4,7 +4,6 @@ import org.apache.spark.SparkException
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.Row
-import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.sources.v2.reader._
 import org.apache.spark.sql.sources.v2.{DataSourceOptions, DataSourceV2, ReadSupport}
 import org.apache.spark.sql.types.StructType

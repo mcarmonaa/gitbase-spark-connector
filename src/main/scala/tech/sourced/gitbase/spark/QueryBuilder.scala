@@ -11,7 +11,7 @@ object QueryBuilder {
 
   def qualify(col: Attribute): String = {
     val table = col.metadata.getString(Sources.SourceKey)
-    s"$table.${col.name}"
+    s"$table.`${col.name}`"
   }
 
   def qualify(table: String, col: String): String = s"$table.`$col`"
@@ -22,6 +22,8 @@ object QueryBuilder {
     compileExpression(expr)
       .getOrElse(throw new SparkException(s"unable to compile expression: $expr"))
 
+
+  // scalastyle:off cyclomatic.complexity
   def compileExpression(expr: Expression): Option[String] = {
     Option(expr match {
       case EqualTo(attr, value) =>
@@ -43,6 +45,7 @@ object QueryBuilder {
         s"${mustCompileExpr(attr)} >= ${mustCompileExpr(value)}"
       case IsNull(attr) => s"${mustCompileExpr(attr)} IS NULL"
       case IsNotNull(attr) => s"""${mustCompileExpr(attr)} IS NOT NULL"""
+      case RLike(left, right) => s"${mustCompileExpr(left)} REGEXP ${mustCompileExpr(right)}"
 
       /* TODO(erizocosmico): support this
     case expressions.StringStartsWith(attr, value) => s"""$attr REGEXP '^$value'"""
@@ -77,9 +80,20 @@ object QueryBuilder {
       // prevent that, we need to do a special case for longs.
       case Literal(v: Long, _) => v.toString
       case lit: Literal => lit.sql
+      case Year(e) => s"YEAR(${mustCompileExpr(e)})"
+      case Month(e) => s"MONTH(${mustCompileExpr(e)})"
+      case DayOfMonth(e) => s"DAY(${mustCompileExpr(e)})"
+      case DayOfYear(e) => s"DAYOFYEAR(${mustCompileExpr(e)})"
+      case Round(e, scale) => s"ROUND(${mustCompileExpr(e)}, ${mustCompileExpr(scale)})"
+      case Ceil(e) => s"CEIL(${mustCompileExpr(e)})"
+      case Floor(e) => s"FLOOR(${mustCompileExpr(e)})"
+      case Substring(str, pos, len) =>
+        s"SUBSTRING(${mustCompileExpr(str)}, ${mustCompileExpr(pos)}, ${mustCompileExpr(len)})"
+      case Cast(e, typ, _) => s"CAST(${mustCompileExpr(e)} AS ${typ.sql})"
       case _ => null
     })
   }
+  // scalastyle:on cyclomatic.complexity
 }
 
 /**

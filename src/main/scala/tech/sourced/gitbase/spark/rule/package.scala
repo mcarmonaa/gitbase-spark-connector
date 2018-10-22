@@ -5,7 +5,7 @@ import org.apache.spark.sql.catalyst.rules.Rule
 
 package object rule {
 
-  def getAll(): Seq[Rule[LogicalPlan]] = {
+  def getAll: Seq[Rule[LogicalPlan]] = {
     List(
       AddSource,
       PushdownJoins
