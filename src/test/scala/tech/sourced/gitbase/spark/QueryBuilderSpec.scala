@@ -8,6 +8,8 @@ import org.apache.spark.unsafe.types.UTF8String
 import org.scalatest.{FlatSpec, Matchers}
 import QueryBuilder._
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.Column
+import tech.sourced.gitbase.spark.udf._
 
 class QueryBuilderSpec extends FlatSpec with Matchers {
 
@@ -153,11 +155,42 @@ class QueryBuilderSpec extends FlatSpec with Matchers {
         compileExpression(expr).get should be(expected)
     }
   }
+
+  "QueryBuilder.compileExpression" should "compile udfs" in {
+    val cases = Seq(
+      (Language(mkCol("foo", "a"), mkCol("foo", "b")),
+        "language(foo.a, foo.b)"),
+
+      (Uast(mkCol("foo", "a"), mkCol("foo", "b"), mkCol("foo", "c")),
+        "uast(foo.a, foo.b, foo.c)"),
+
+      (UastChildren(mkCol("foo", "a")),
+        "uast_children(foo.a)"),
+
+      (UastExtract(mkCol("foo", "a"), mkCol("foo", "b")),
+        "uast_extract(foo.a, foo.b)"),
+
+      (UastMode(mkCol("foo", "a"), mkCol("foo", "b"), mkCol("foo", "c")),
+        "uast_mode(foo.a, foo.b, foo.c)"),
+
+      (UastXPath(mkCol("foo", "a"), mkCol("foo", "b")),
+        "uast_xpath(foo.a, foo.b)")
+    )
+
+    cases.foreach {
+      case (udf, expected) =>
+        compileExpression(udf.expr).get should be(expected)
+    }
+  }
 }
 
 object QueryBuilderUtil {
   def mkAttr(table: String, name: String): Attribute = {
     val metadata = new MetadataBuilder().putString(Sources.SourceKey, table).build()
     AttributeReference(name, StringType, nullable = false, metadata)()
+  }
+
+  def mkCol(table: String, name: String): Column = {
+    new Column(mkAttr(table, name))
   }
 }

@@ -3,7 +3,7 @@ package tech.sourced.gitbase.spark
 import org.apache.spark.SparkException
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{BinaryType, StructType}
 
 object QueryBuilder {
 
@@ -28,6 +28,13 @@ object QueryBuilder {
   // scalastyle:off cyclomatic.complexity
   def compileExpression(expr: Expression): Option[String] = {
     expr match {
+      case ScalaUDF(_, _, children, _, Some(name), _, _) =>
+        val args = children.map(compileExpression)
+        if (args.forall(_.isDefined) && udf.isSupported(name)) {
+          Some(s"$name(${args.map(_.get).mkString(", ")})")
+        } else {
+          None
+        }
       case EqualTo(attr, value) =>
         compileExpression(attr, value).map(x => s"${x._1} = ${x._2}")
       case EqualNullSafe(attr: Attribute, value) =>
@@ -108,8 +115,12 @@ object QueryBuilder {
           case _ => None
         }
 
+      case Cast(e, BinaryType, _) => compileExpression(e)
+        .map(e => s"CAST($e AS BLOB)")
+
       case Cast(e, typ, _) => compileExpression(e)
         .map(e => s"CAST($e AS ${typ.sql})")
+
       case _ => None
     }
   }
