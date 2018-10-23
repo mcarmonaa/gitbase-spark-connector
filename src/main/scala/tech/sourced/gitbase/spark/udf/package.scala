@@ -11,7 +11,8 @@ package object udf {
     UastMode,
     UastXPath,
     UastExtract,
-    UastChildren
+    UastChildren,
+    IsBinary
   )
 
   def registerUDFs(ss: SparkSession): Unit = {
