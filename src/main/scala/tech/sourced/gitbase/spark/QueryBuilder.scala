@@ -18,34 +18,36 @@ object QueryBuilder {
 
   def compileValue(value: Any): Any = dialect.compileValue(value)
 
-  def mustCompileExpr(expr: Expression): String =
-    compileExpression(expr)
-      .getOrElse(throw new SparkException(s"unable to compile expression: $expr"))
-
+  def compileExpression(e1: Expression, e2: Expression): Option[(String, String)] = {
+    (compileExpression(e1), compileExpression(e2)) match {
+      case (Some(a), Some(b)) => Some((a, b))
+      case _ => None
+    }
+  }
 
   // scalastyle:off cyclomatic.complexity
   def compileExpression(expr: Expression): Option[String] = {
-    Option(expr match {
+    expr match {
       case EqualTo(attr, value) =>
-        s"${mustCompileExpr(attr)} = ${mustCompileExpr(value)}"
+        compileExpression(attr, value).map(x => s"${x._1} = ${x._2}")
       case EqualNullSafe(attr: Attribute, value) =>
-        val col = attr
-        s"(NOT (${mustCompileExpr(col)} != ${mustCompileExpr(value)} " +
-          s"OR ${mustCompileExpr(col)} IS NULL OR " +
-          s"${mustCompileExpr(value)} IS NULL) OR " +
-          s"(${mustCompileExpr(col)} IS NULL " +
-          s"AND ${mustCompileExpr(value)} IS NULL))"
+        compileExpression(attr, value)
+          .map(x => s"(NOT (${x._1} != ${x._2} " +
+            s"OR ${x._1} IS NULL OR ${x._2} IS NULL) OR " +
+            s"(${x._1} IS NULL AND ${x._2} IS NULL))")
       case LessThan(attr, value) =>
-        s"${mustCompileExpr(attr)} < ${mustCompileExpr(value)}"
+        compileExpression(attr, value).map(x => s"${x._1} < ${x._2}")
       case GreaterThan(attr, value) =>
-        s"${mustCompileExpr(attr)} > ${mustCompileExpr(value)}"
+        compileExpression(attr, value).map(x => s"${x._1} > ${x._2}")
       case LessThanOrEqual(attr, value) =>
-        s"${mustCompileExpr(attr)} <= ${mustCompileExpr(value)}"
+        compileExpression(attr, value).map(x => s"${x._1} <= ${x._2}")
       case GreaterThanOrEqual(attr, value) =>
-        s"${mustCompileExpr(attr)} >= ${mustCompileExpr(value)}"
-      case IsNull(attr) => s"${mustCompileExpr(attr)} IS NULL"
-      case IsNotNull(attr) => s"""${mustCompileExpr(attr)} IS NOT NULL"""
-      case RLike(left, right) => s"${mustCompileExpr(left)} REGEXP ${mustCompileExpr(right)}"
+        compileExpression(attr, value).map(x => s"${x._1} >= ${x._2}")
+      case IsNull(attr) => compileExpression(attr).map(a => s"$a IS NULL")
+      case IsNotNull(attr) => compileExpression(attr)
+        .map(a => s"$a IS NOT NULL")
+      case RLike(left, right) =>
+        compileExpression(left, right).map(x => s"${x._1} REGEXP ${x._2}")
 
       /* TODO(erizocosmico): support this
     case expressions.StringStartsWith(attr, value) => s"""$attr REGEXP '^$value'"""
@@ -54,45 +56,64 @@ object QueryBuilder {
     */
 
       case In(attr, value) if value.isEmpty =>
-        s"""CASE WHEN ${mustCompileExpr(attr)} IS NULL THEN NULL ELSE FALSE END"""
+        compileExpression(attr)
+          .map(a => s"CASE WHEN $a IS NULL THEN NULL ELSE FALSE END")
       case In(attr, value) =>
-        s"""${mustCompileExpr(attr)} IN (${value.map(mustCompileExpr).mkString(", ")})"""
-      case Not(f1) => compileExpression(f1).map(p => s"(NOT ($p))").orNull
+        (compileExpression(attr), value.map(x => compileExpression(x))) match {
+          case (Some(a), b) if b.forall(_.isDefined) =>
+            Some(s"$a IN (${b.map(_.get).mkString(", ")})")
+          case _ => None
+        }
+      case Not(f1) => compileExpression(f1).map(p => s"(NOT ($p))")
       case Or(f1, f2) =>
         // We can't compile Or filter unless both sub-filters are compiled successfully.
         // It applies too for the following And filter.
         // If we can make sure compileFilter supports all filters, we can remove this check.
-        val or = Seq(f1, f2).flatMap(compileExpression)
-        if (or.size == 2) {
+        val or = Seq(f1, f2).flatMap(x => compileExpression(x))
+        Option(if (or.size == 2) {
           or.map(p => s"($p)").mkString(" OR ")
         } else {
           null
-        }
+        })
       case And(f1, f2) =>
-        val and = Seq(f1, f2).flatMap(compileExpression)
-        if (and.size == 2) {
+        val and = Seq(f1, f2).flatMap(x => compileExpression(x))
+        Option(if (and.size == 2) {
           and.map(p => s"($p)").mkString(" AND ")
         } else {
           null
-        }
-      case col: Attribute => qualify(col)
+        })
+      case col: Attribute => Some(qualify(col))
       // Literal sql method prints longs as {NUMBER}L, which is not valid SQL. To
       // prevent that, we need to do a special case for longs.
-      case Literal(v: Long, _) => v.toString
-      case lit: Literal => lit.sql
-      case Year(e) => s"YEAR(${mustCompileExpr(e)})"
-      case Month(e) => s"MONTH(${mustCompileExpr(e)})"
-      case DayOfMonth(e) => s"DAY(${mustCompileExpr(e)})"
-      case DayOfYear(e) => s"DAYOFYEAR(${mustCompileExpr(e)})"
-      case Round(e, scale) => s"ROUND(${mustCompileExpr(e)}, ${mustCompileExpr(scale)})"
-      case Ceil(e) => s"CEIL(${mustCompileExpr(e)})"
-      case Floor(e) => s"FLOOR(${mustCompileExpr(e)})"
+      case Literal(v: Long, _) => Some(v.toString)
+      case lit: Literal => Some(lit.sql)
+      case Year(e) => compileExpression(e)
+        .map(e => s"YEAR($e)")
+      case Month(e) => compileExpression(e)
+        .map(e => s"MONTH($e)")
+      case DayOfMonth(e) => compileExpression(e)
+        .map(e => s"DAY($e)")
+      case DayOfYear(e) => compileExpression(e)
+        .map(e => s"DAYOFYEAR($e)")
+      case Round(e, scale) =>
+        compileExpression(e, scale).map(x => s"ROUND(${x._1}, ${x._2})")
+      case Ceil(e) => compileExpression(e)
+        .map(e => s"CEIL($e)")
+      case Floor(e) => compileExpression(e)
+        .map(e => s"FLOOR($e)")
+
       case Substring(str, pos, len) =>
-        s"SUBSTRING(${mustCompileExpr(str)}, ${mustCompileExpr(pos)}, ${mustCompileExpr(len)})"
-      case Cast(e, typ, _) => s"CAST(${mustCompileExpr(e)} AS ${typ.sql})"
-      case _ => null
-    })
+        (compileExpression(str), compileExpression(pos), compileExpression(len)) match {
+          case (Some(a), Some(b), Some(c)) => Some(s"SUBSTRING($a, $b, $c)")
+          case _ => None
+        }
+
+      case Cast(e, typ, _) => compileExpression(e)
+        .map(e => s"CAST($e AS ${typ.sql})")
+      case _ => None
+    }
   }
+
   // scalastyle:on cyclomatic.complexity
 }
 
@@ -124,7 +145,7 @@ case class QueryBuilder(fields: Seq[Attribute] = Seq(),
     }
 
   def whereClause: String = {
-    val compiledFilters = filters.flatMap(compileExpression)
+    val compiledFilters = filters.flatMap(x => compileExpression(x))
     if (compiledFilters.isEmpty) {
       ""
     } else {
@@ -132,7 +153,8 @@ case class QueryBuilder(fields: Seq[Attribute] = Seq(),
     }
   }
 
-  def getOnClause(cond: Expression): String = mustCompileExpr(cond)
+  def getOnClause(cond: Expression): String = compileExpression(cond)
+    .getOrElse(throw new SparkException(s"unable to compile expression $cond"))
 
   def sourceToSql(source: DataSource): String = source match {
     case JoinedSource(left, right, Some(cond)) =>
