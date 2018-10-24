@@ -20,7 +20,7 @@ package object util {
 
     def registerGitbaseSource(server: String = "",
                               config: Map[String, String] = defaultConfig,
-                              rules: Seq[Rule[LogicalPlan]] = rule.getAll()
+                              rules: Seq[Rule[LogicalPlan]] = rule.getAll
                              ): SparkSession.Builder = {
 
       val gsConfig = if (server.isEmpty) {
@@ -53,9 +53,10 @@ package object util {
   )
 
   def injectRules(rules: Seq[Rule[LogicalPlan]]): SparkSessionExtensions => Unit = {
-    extensions: SparkSessionExtensions => rules.foreach(rule =>
-      extensions.injectOptimizerRule(session => rule)
-    )
+    extensions: SparkSessionExtensions =>
+      rules.foreach(rule =>
+        extensions.injectOptimizerRule(session => rule)
+      )
   }
 
   def createTempViews(ss: SparkSession): Unit = {
