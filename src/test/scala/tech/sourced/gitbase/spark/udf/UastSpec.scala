@@ -4,6 +4,7 @@ import org.apache.spark.sql.types.{BinaryType, StructField}
 import org.apache.spark.sql.functions._
 
 class UastSpec extends BaseUdfSpec {
+
   import spark.implicits._
 
   behavior of "Uast"
@@ -20,7 +21,7 @@ class UastSpec extends BaseUdfSpec {
     val xpath = ""
     val uastDf = filesDf.withColumn(
       "uast",
-      Uast('blob_content, Language('file_path, 'blob_content),lit(xpath))
+      Uast('blob_content, Language('file_path, 'blob_content), lit(xpath))
     )
 
     uastDf.schema.fields should contain(StructField("uast", BinaryType))
@@ -42,7 +43,18 @@ class UastSpec extends BaseUdfSpec {
         nodes should not be empty
         nodes should have length 1
       }
-      case _ => row.getAs[Array[Byte]](1) should be (null)
+      case _ => row.isNullAt(1) should be(true)
+    })
+  }
+
+  it should "ignore unsupported languages" in {
+    val uastDf = filesDf.withColumn(
+      "uast",
+      Uast('blob_content, lit("text"), lit(""))
+    )
+
+    uastDf.select('uast).collect().foreach(row => {
+      row.isNullAt(0) should be(true)
     })
   }
 }

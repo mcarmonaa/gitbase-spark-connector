@@ -7,7 +7,7 @@ import org.apache.spark.internal.Logging
 import org.bblfsh.client.BblfshClient
 
 import scala.collection.mutable.ArrayBuffer
-import scala.util.{Try,Success,Failure}
+import scala.util.{Try, Success, Failure}
 
 object BblfshUtils extends Logging {
   /** Key used for the option to specify the host of the bblfsh grpc service. */
@@ -23,6 +23,7 @@ object BblfshUtils extends Logging {
   val defaultPort = 9432
 
   private var client: BblfshClient = _
+  private var supportedLanguages: Seq[String] = _
 
   def getClient(): BblfshClient = synchronized {
     if (client == null) {
@@ -38,6 +39,17 @@ object BblfshUtils extends Logging {
       client = BblfshClient(host, port)
     }
     client
+  }
+
+  def isSupportedLanguage(lang: String): Boolean = {
+    if (supportedLanguages == null) {
+      supportedLanguages = getClient()
+        .supportedLanguages()
+        .languages
+        .map(_.language.toLowerCase())
+    }
+
+    supportedLanguages.contains(lang.toLowerCase)
   }
 
   def marshalNodes(nodes: Seq[Node]): Option[Array[Byte]] = {
