@@ -78,14 +78,14 @@ object QueryBuilder {
         // If we can make sure compileFilter supports all filters, we can remove this check.
         val or = Seq(f1, f2).flatMap(x => compileExpression(x))
         Option(if (or.size == 2) {
-          or.map(p => s"($p)").mkString(" OR ")
+          s"(${or.mkString(") OR (")})"
         } else {
           null
         })
       case And(f1, f2) =>
         val and = Seq(f1, f2).flatMap(x => compileExpression(x))
         Option(if (and.size == 2) {
-          and.map(p => s"($p)").mkString(" AND ")
+          s"(${and.mkString(") AND (")})"
         } else {
           null
         })
@@ -160,7 +160,7 @@ case class QueryBuilder(fields: Seq[Attribute] = Seq(),
     if (compiledFilters.isEmpty) {
       ""
     } else {
-      s"WHERE ${compiledFilters.mkString(" AND ")}"
+      s"WHERE (${compiledFilters.mkString(") AND (")})"
     }
   }
 
