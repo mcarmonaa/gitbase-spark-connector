@@ -61,11 +61,11 @@ case class DefaultReader(servers: Seq[GitbaseServer],
                          source: DataSource
                         ) extends DataSourceReader
   with SupportsPushDownRequiredColumns
-  with SupportsPushDownFilters
+  with SupportsPushDownCatalystFilters
   with Logging {
 
   private var requiredSchema = schema
-  private var filters: Array[Filter] = Array()
+  private var filters: Array[Expression] = Array()
 
   override def readSchema(): StructType = requiredSchema
 
@@ -89,13 +89,13 @@ case class DefaultReader(servers: Seq[GitbaseServer],
     this.requiredSchema = requiredSchema
   }
 
-  override def pushFilters(filters: Array[Filter]): Array[Filter] = {
-    val compiled = filters.map(f => (QueryBuilder.compileFilter(f).orNull, f))
+  override def pushCatalystFilters(filters: Array[Expression]): Array[Expression] = {
+    val compiled = filters.map(f => (QueryBuilder.compileExpression(f).orNull, f))
     this.filters = compiled.filter(_._1 != null).map(_._2)
     compiled.filter(_._1 == null).map(_._2)
   }
 
-  override def pushedFilters(): Array[Filter] = filters
+  override def pushedCatalystFilters(): Array[Expression] = filters
 
 }
 
