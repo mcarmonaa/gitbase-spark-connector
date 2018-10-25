@@ -13,5 +13,5 @@ abstract class CustomUDF {
   /** Function to execute when this function is called. */
   def function: UserDefinedFunction
 
-  def apply(exprs: Column*): Column = function(exprs: _*)
+  def apply(exprs: Column*): Column = function.withName(name)(exprs: _*)
 }

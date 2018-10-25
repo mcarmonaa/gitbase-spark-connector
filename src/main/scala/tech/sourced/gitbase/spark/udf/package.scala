@@ -15,6 +15,8 @@ package object udf {
     IsBinary
   )
 
+  def isSupported(name: String): Boolean = udfs.exists(f => f.name == name)
+
   def registerUDFs(ss: SparkSession): Unit = {
     spark = ss
     udfs.foreach(f => spark.udf.register(f.name, f.function))
