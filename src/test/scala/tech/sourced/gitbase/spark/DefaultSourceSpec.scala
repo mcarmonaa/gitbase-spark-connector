@@ -183,8 +183,8 @@ class DefaultSourceSpec extends BaseGitbaseSpec {
     val df = spark.sql("SELECT file_path," +
       " uast_extract(uast(blob_content, language(file_path, blob_content), \"//FuncLit\")," +
       "  \"internalRole\")" +
-      " FROM files")
-    df.count() should be(89214)
+      " FROM files LIMIT 100")
+    df.count() should be(100)
     for (row <- df.collect()) {
       row.length should be(2)
     }
