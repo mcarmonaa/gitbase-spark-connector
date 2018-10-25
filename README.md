@@ -1,6 +1,6 @@
 # gitbase-spark-connector [![Build Status](https://travis-ci.org/src-d/gitbase-spark-connector.svg?branch=master)](https://travis-ci.org/src-d/gitbase-spark-connector) [![codecov](https://codecov.io/gh/src-d/gitbase-spark-connector/branch/master/graph/badge.svg)](https://codecov.io/gh/src-d/gitbase-spark-connector)
 
-**gitbase-spark-connector** is a [Scala](https://www.scala-lang.org/) libraray that lets you expose [gitbase](https://www.github.com/src-d/gitbase) tables as [Spark SQL](https://spark.apache.org/sql/) Dataframes to run scalable analysis and processing pipelines on source code.
+**gitbase-spark-connector** is a [Scala](https://www.scala-lang.org/) library that lets you expose [gitbase](https://www.github.com/src-d/gitbase) tables as [Spark SQL](https://spark.apache.org/sql/) Dataframes to run scalable analysis and processing pipelines on source code.
 
 # Pre-requisites
 
