@@ -7,6 +7,7 @@ import org.apache.spark.sql.types.{IntegerType, MetadataBuilder, StringType}
 import org.apache.spark.unsafe.types.UTF8String
 import org.scalatest.{FlatSpec, Matchers}
 import QueryBuilder._
+import org.apache.spark.sql.catalyst.expressions
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.Column
 import tech.sourced.gitbase.spark.udf._
@@ -45,12 +46,12 @@ class QueryBuilderSpec extends FlatSpec with Matchers {
 
     QueryBuilder(filters = Seq(
       EqualTo(mkAttr("foo", "bar"), Literal(1, IntegerType))
-    )).whereClause should be(s"WHERE ${qualify("foo", "bar")} = 1")
+    )).whereClause should be(s"WHERE (${qualify("foo", "bar")} = 1)")
 
     QueryBuilder(filters = Seq(
       EqualTo(mkAttr("foo", "bar"), Literal(1, IntegerType)),
       EqualTo(mkAttr("foo", "baz"), Literal(2, IntegerType))
-    )).whereClause should be(s"WHERE ${qualify("foo", "bar")} = 1 AND ${qualify("foo", "baz")} = 2")
+    )).whereClause should be(s"WHERE (${qualify("foo", "bar")} = 1) AND (${qualify("foo", "baz")} = 2)")
   }
 
   "QueryBuilder.selectedTables" should "return SQL for FROM clause" in {
@@ -147,7 +148,83 @@ class QueryBuilderSpec extends FlatSpec with Matchers {
         Literal(2, IntegerType)
       ), "SUBSTRING(foo.`a`, 1, 2)"),
 
-      (Cast(mkAttr("foo", "a"), IntegerType, None), "CAST(foo.`a` AS INT)")
+      (Cast(mkAttr("foo", "a"), IntegerType, None), "CAST(foo.`a` AS INT)"),
+
+      (And(
+        expressions.RLike(
+          mkAttr("foo", "a"),
+          Literal("'^refs/heads/HEAD/'", StringType)
+        ),
+        Or(
+          expressions.RLike(
+            mkAttr("foo", "a"),
+            Literal("""'(?i)facebook.*[\'\\"][0-9a-f]{32}[\'\\"]'""", StringType)
+          ),
+          Or(
+            expressions.RLike(
+              mkAttr("foo", "a"),
+              Literal("""'(?i)twitter.*[\'\\"][0-9a-zA-Z]{35,44}[\'\\"]'""", StringType)
+            ),
+            Or(
+              expressions.RLike(
+                mkAttr("foo", "a"),
+                Literal("""'(?i)github.*[\'\\"][0-9a-zA-Z]{35,40}[\'\\"]'""", StringType)
+              ),
+              Or(
+                expressions.RLike(
+                  mkAttr("foo", "a"),
+                  Literal("""'AKIA[0-9A-Z]{16}'""", StringType)
+                ),
+                Or(
+                  expressions.RLike(
+                    mkAttr("foo", "a"),
+                    Literal("""'(?i)reddit.*[\'\\"][0-9a-zA-Z]{14}[\'\\"]'""", StringType)
+                  ),
+                  Or(
+                    expressions.RLike(
+                      mkAttr("foo", "a"),
+                      Literal("""'(?i)heroku.*[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}'""", StringType)
+                    ),
+                    Or(
+                      expressions.RLike(
+                        mkAttr("foo", "a"),
+                        Literal("""'.*-----BEGIN PRIVATE KEY-----.*'""", StringType)
+                      ),
+                      Or(
+                        expressions.RLike(
+                          mkAttr("foo", "a"),
+                          Literal("""'.*-----BEGIN RSA PRIVATE KEY-----.*'""", StringType)
+                        ),
+                        Or(
+                          expressions.RLike(
+                            mkAttr("foo", "a"),
+                            Literal("""'.*-----BEGIN DSA PRIVATE KEY-----.*'""", StringType)
+                          ),
+                          expressions.RLike(
+                            mkAttr("foo", "a"),
+                            Literal("""'.*-----BEGIN OPENSSH PRIVATE KEY-----.*'""", StringType)
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      ),
+        "(foo.`a` REGEXP '^refs/heads/HEAD/') AND " +
+          """((foo.`a` REGEXP '(?i)facebook.*[\'\\"][0-9a-f]{32}[\'\\"]') OR """ +
+          """((foo.`a` REGEXP '(?i)twitter.*[\'\\"][0-9a-zA-Z]{35,44}[\'\\"]') OR """ +
+          """((foo.`a` REGEXP '(?i)github.*[\'\\"][0-9a-zA-Z]{35,40}[\'\\"]') OR """ +
+          """((foo.`a` REGEXP 'AKIA[0-9A-Z]{16}') OR """ +
+          """((foo.`a` REGEXP '(?i)reddit.*[\'\\"][0-9a-zA-Z]{14}[\'\\"]') OR """ +
+          """((foo.`a` REGEXP '(?i)heroku.*[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}') OR """ +
+          """((foo.`a` REGEXP '.*-----BEGIN PRIVATE KEY-----.*') OR """ +
+          """((foo.`a` REGEXP '.*-----BEGIN RSA PRIVATE KEY-----.*') OR """ +
+          """((foo.`a` REGEXP '.*-----BEGIN DSA PRIVATE KEY-----.*') OR """ +
+          """(foo.`a` REGEXP '.*-----BEGIN OPENSSH PRIVATE KEY-----.*'))))))))))""")
     )
 
     cases.foreach {
@@ -159,22 +236,22 @@ class QueryBuilderSpec extends FlatSpec with Matchers {
   "QueryBuilder.compileExpression" should "compile udfs" in {
     val cases = Seq(
       (Language(mkCol("foo", "a"), mkCol("foo", "b")),
-        "language(foo.a, foo.b)"),
+        "language(foo.`a`, foo.`b`)"),
 
       (Uast(mkCol("foo", "a"), mkCol("foo", "b"), mkCol("foo", "c")),
-        "uast(foo.a, foo.b, foo.c)"),
+        "uast(foo.`a`, foo.`b`, foo.`c`)"),
 
       (UastChildren(mkCol("foo", "a")),
-        "uast_children(foo.a)"),
+        "uast_children(foo.`a`)"),
 
       (UastExtract(mkCol("foo", "a"), mkCol("foo", "b")),
-        "uast_extract(foo.a, foo.b)"),
+        "uast_extract(foo.`a`, foo.`b`)"),
 
       (UastMode(mkCol("foo", "a"), mkCol("foo", "b"), mkCol("foo", "c")),
-        "uast_mode(foo.a, foo.b, foo.c)"),
+        "uast_mode(foo.`a`, foo.`b`, foo.`c`)"),
 
       (UastXPath(mkCol("foo", "a"), mkCol("foo", "b")),
-        "uast_xpath(foo.a, foo.b)")
+        "uast_xpath(foo.`a`, foo.`b`)")
     )
 
     cases.foreach {
