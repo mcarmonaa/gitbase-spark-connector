@@ -1,7 +1,12 @@
 package tech.sourced.gitbase.spark
 
 import org.apache.spark.SparkException
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, NamedExpression, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{
+  AttributeReference,
+  Expression,
+  NamedExpression,
+  SortOrder
+}
 
 /**
   * Query holds all the data needed to build a query.
@@ -86,8 +91,9 @@ sealed trait Node {
             })
 
             if (fields.length != newProjection.length) {
-              throw new SparkException("This is likely a bug, could not fit projection to schema. " +
-                s"Schema: ${fields.map(_.name).mkString(", ")}, Projection: ${exprs.mkString(", ")}")
+              throw new SparkException("This is likely a bug, could not fit projection to " +
+                s"schema. Schema: ${fields.map(_.name).mkString(", ")}, " +
+                s"Projection: ${exprs.mkString(", ")}")
             }
 
             Project(newProjection, child)

@@ -53,11 +53,17 @@ class QueryBuilderSpec extends FlatSpec with Matchers {
             mkAttr("bar", "c")
           ),
           Filter(
-            Seq(EqualTo(mkAttr("foo", "a"), Literal(2, IntegerType))),
+            Seq(EqualTo(
+              mkAttr("foo", "a"),
+              Literal(2, IntegerType)
+            )),
             Join(
               Table("foo"),
               Table("bar"),
-              Some(EqualTo(mkAttr("foo", "a"), mkAttr("bar", "a")))
+              Some(EqualTo(
+                mkAttr("foo", "a"),
+                mkAttr("bar", "a")
+              ))
             )
           )
         )
@@ -88,7 +94,8 @@ class QueryBuilderSpec extends FlatSpec with Matchers {
         mkAttr("foo", "baz"),
         Literal(2, IntegerType)
       )
-    ))) should be(s"WHERE (${qualify("foo", "bar")} = 1) AND (${qualify("foo", "baz")} = 2)")
+    ))) should be(s"WHERE (${qualify("foo", "bar")} = 1) " +
+      s"AND (${qualify("foo", "baz")} = 2)")
   }
 
   "QueryBuilder.selectedTables" should "return SQL for FROM clause" in {
@@ -159,7 +166,8 @@ class QueryBuilderSpec extends FlatSpec with Matchers {
         "foo.`a` = 1"),
 
       (EqualNullSafe(mkAttr("foo", "a"), Literal(1, IntegerType)),
-        s"(NOT (foo.`a` != 1 OR foo.`a` IS NULL OR 1 IS NULL) OR (foo.`a` IS NULL AND 1 IS NULL))"),
+        s"(NOT (foo.`a` != 1 OR foo.`a` IS NULL OR 1 IS NULL) " +
+          s"OR (foo.`a` IS NULL AND 1 IS NULL))"),
 
       (LessThan(mkAttr("foo", "a"), Literal(1, IntegerType)),
         s"foo.`a` < 1"),
@@ -250,7 +258,10 @@ class QueryBuilderSpec extends FlatSpec with Matchers {
                   Or(
                     expressions.RLike(
                       mkAttr("foo", "a"),
-                      Literal("""'(?i)heroku.*[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}'""", StringType)
+                      Literal(
+                        """'(?i)heroku.*[0-9A-F]{8}-[0-9A-F]{4}-"""
+                          +
+                          """[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}'""", StringType)
                     ),
                     Or(
                       expressions.RLike(
@@ -287,7 +298,8 @@ class QueryBuilderSpec extends FlatSpec with Matchers {
           """((foo.`a` REGEXP '(?i)github.*[\'\\"][0-9a-zA-Z]{35,40}[\'\\"]') OR """ +
           """((foo.`a` REGEXP 'AKIA[0-9A-Z]{16}') OR """ +
           """((foo.`a` REGEXP '(?i)reddit.*[\'\\"][0-9a-zA-Z]{14}[\'\\"]') OR """ +
-          """((foo.`a` REGEXP '(?i)heroku.*[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}') OR """ +
+          """((foo.`a` REGEXP '(?i)heroku.*[0-9A-F]""" +
+          """{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}') OR """ +
           """((foo.`a` REGEXP '.*-----BEGIN PRIVATE KEY-----.*') OR """ +
           """((foo.`a` REGEXP '.*-----BEGIN RSA PRIVATE KEY-----.*') OR """ +
           """((foo.`a` REGEXP '.*-----BEGIN DSA PRIVATE KEY-----.*') OR """ +

@@ -167,7 +167,8 @@ class DefaultSourceSpec extends BaseGitbaseSpec {
         |        OR blob_content REGEXP '(?i)github.*[\'\\"][0-9a-zA-Z]{35,40}[\'\\"]'
         |        OR blob_content REGEXP 'AKIA[0-9A-Z]{16}'
         |        OR blob_content REGEXP '(?i)reddit.*[\'\\"][0-9a-zA-Z]{14}[\'\\"]'
-        |        OR blob_content REGEXP '(?i)heroku.*[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}'
+        |        OR blob_content REGEXP '(?i)heroku.*[0-9A-F]{8}-[0-9A-F]
+        |{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}'
         |        OR blob_content REGEXP '.*-----BEGIN PRIVATE KEY-----.*'
         |        OR blob_content REGEXP '.*-----BEGIN RSA PRIVATE KEY-----.*'
         |        OR blob_content REGEXP '.*-----BEGIN DSA PRIVATE KEY-----.*'

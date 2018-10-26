@@ -1,6 +1,11 @@
 package tech.sourced.gitbase.spark.rule
 
-import org.apache.spark.sql.catalyst.expressions.{And, AttributeReference, Expression, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.{
+  And,
+  AttributeReference,
+  Expression,
+  NamedExpression
+}
 import org.apache.spark.sql.catalyst.plans.logical
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -10,16 +15,22 @@ import tech.sourced.gitbase.spark._
 
 object PushdownTree extends Rule[LogicalPlan] {
 
-  /** @inheritdoc */
+  /** @inheritdoc*/
   def apply(plan: LogicalPlan): LogicalPlan = plan transformUp {
     case logical.Project(Seq(), child) => child
 
-    case n@logical.Project(list, DataSourceV2Relation(_, DefaultReader(servers, schema, query))) =>
+    case n@logical.Project(
+    list,
+    DataSourceV2Relation(_, DefaultReader(servers, schema, query))) =>
       if (!canBeHandled(list) || containsDuplicates(list)) {
         fixAttributeReferences(n)
       } else {
-        val newSchema = StructType(list.map(e => StructField(e.name, e.dataType, e.nullable, e.metadata)))
-        val newOutput = list.map(e => AttributeReference(e.name, e.dataType, e.nullable, e.metadata)())
+        val newSchema = StructType(
+          list.map(e => StructField(e.name, e.dataType, e.nullable, e.metadata))
+        )
+        val newOutput = list.map(e =>
+          AttributeReference(e.name, e.dataType, e.nullable, e.metadata)()
+        )
         DataSourceV2Relation(
           newOutput,
           DefaultReader(
@@ -30,7 +41,9 @@ object PushdownTree extends Rule[LogicalPlan] {
         )
       }
 
-    case n@logical.Filter(expr, DataSourceV2Relation(out, DefaultReader(servers, schema, query))) =>
+    case n@logical.Filter(
+    expr,
+    DataSourceV2Relation(out, DefaultReader(servers, schema, query))) =>
       if (!canBeHandled(Seq(expr))) {
         fixAttributeReferences(n)
       } else {
@@ -45,7 +58,10 @@ object PushdownTree extends Rule[LogicalPlan] {
       }
 
     // We should only push down local sorts.
-    case n@logical.Sort(order, false, DataSourceV2Relation(out, DefaultReader(servers, schema, query))) =>
+    case n@logical.Sort(
+    order,
+    false,
+    DataSourceV2Relation(out, DefaultReader(servers, schema, query))) =>
       if (!canBeHandled(order.map(_.child))) {
         fixAttributeReferences(n)
       } else {
