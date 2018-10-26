@@ -16,7 +16,6 @@ class QueryBuilderSpec extends FlatSpec with Matchers {
 
   import QueryBuilderUtil._
 
-
   "QueryBuilder.qualify" should "qualify and quote col" in {
     val expected = s"foo.`bar`"
     qualify("foo", "bar") should be(expected)
@@ -41,49 +40,117 @@ class QueryBuilderSpec extends FlatSpec with Matchers {
     }
   }
 
+  "QueryBuilder.sql" should "return the SQL for a tree" in {
+    QueryBuilder(
+      Sort(
+        Seq(
+          SortOrder(mkAttr("foo", "a"), Ascending)
+        ),
+        Project(
+          Seq(
+            mkAttr("foo", "a"),
+            mkAttr("foo", "b"),
+            mkAttr("bar", "c")
+          ),
+          Filter(
+            Seq(EqualTo(mkAttr("foo", "a"), Literal(2, IntegerType))),
+            Join(
+              Table("foo"),
+              Table("bar"),
+              Some(EqualTo(mkAttr("foo", "a"), mkAttr("bar", "a")))
+            )
+          )
+        )
+      )
+    ).sql should be("SELECT foo.`a`, foo.`b`, bar.`c` " +
+      "FROM foo INNER JOIN bar ON foo.`a` = bar.`a` " +
+      "WHERE (foo.`a` = 2) " +
+      "ORDER BY foo.`a` ASC")
+  }
+
   "QueryBuilder.whereClause" should "return SQL for where clause" in {
-    QueryBuilder().whereClause should be("")
+    val qb = QueryBuilder()
+    qb.whereClause() should be("")
 
-    QueryBuilder(filters = Seq(
-      EqualTo(mkAttr("foo", "bar"), Literal(1, IntegerType))
-    )).whereClause should be(s"WHERE (${qualify("foo", "bar")} = 1)")
+    qb.whereClause(Query(filters = Seq(
+      EqualTo(
+        mkAttr("foo", "bar"),
+        Literal(1, IntegerType)
+      )
+    ))) should be(s"WHERE (${qualify("foo", "bar")} = 1)")
 
-    QueryBuilder(filters = Seq(
-      EqualTo(mkAttr("foo", "bar"), Literal(1, IntegerType)),
-      EqualTo(mkAttr("foo", "baz"), Literal(2, IntegerType))
-    )).whereClause should be(s"WHERE (${qualify("foo", "bar")} = 1) AND (${qualify("foo", "baz")} = 2)")
+    qb.whereClause(Query(filters = Seq(
+      EqualTo(
+        mkAttr("foo", "bar"),
+        Literal(1, IntegerType)
+      ),
+      EqualTo(
+        mkAttr("foo", "baz"),
+        Literal(2, IntegerType)
+      )
+    ))) should be(s"WHERE (${qualify("foo", "bar")} = 1) AND (${qualify("foo", "baz")} = 2)")
   }
 
   "QueryBuilder.selectedTables" should "return SQL for FROM clause" in {
-    QueryBuilder(
-      source = JoinedSource(TableSource("foo"), TableSource("bar"), None)
-    ).selectedTables should be("foo JOIN bar")
+    val qb = QueryBuilder()
+    qb.selectedTables(Query(
+      source = Some(
+        Join(
+          Table("foo"),
+          Table("bar"),
+          None
+        ))
+    )) should be("foo JOIN bar")
 
-    QueryBuilder(source = JoinedSource(
-      TableSource("foo"),
-      TableSource("bar"),
+    qb.selectedTables(Query(source = Some(Join(
+      Table("foo"),
+      Table("bar"),
       Some(EqualTo(
         mkAttr("foo", "a"),
         mkAttr("bar", "a")
       ))
-    )).selectedTables should be("foo INNER JOIN bar ON foo.`a` = bar.`a`")
+    )))) should be("foo INNER JOIN bar ON foo.`a` = bar.`a`")
 
-    QueryBuilder(source = JoinedSource(
-      JoinedSource(
-        TableSource("foo"),
-        TableSource("bar"),
+    qb.selectedTables(Query(source = Some(Join(
+      Join(
+        Table("foo"),
+        Table("bar"),
         Some(EqualTo(
           mkAttr("foo", "a"),
           mkAttr("bar", "a")
         ))
       ),
-      TableSource("baz"),
+      Table("baz"),
       Some(EqualTo(
         mkAttr("foo", "a"),
         mkAttr("baz", "a")
       ))
-    )).selectedTables should be("foo INNER JOIN bar ON foo.`a` = bar.`a` " +
+    )))) should be("foo INNER JOIN bar ON foo.`a` = bar.`a` " +
       "INNER JOIN baz ON foo.`a` = baz.`a`")
+  }
+
+  "QueryBuilder.orderByClause" should "return SQL for ORDER BY clause" in {
+    val qb = QueryBuilder()
+
+    qb.orderByClause() should be("")
+
+    qb.orderByClause(Query(sort = Seq(
+      SortOrder(
+        mkAttr("foo", "a"),
+        Ascending
+      )
+    ))) should be(" ORDER BY foo.`a` ASC")
+
+    qb.orderByClause(Query(sort = Seq(
+      SortOrder(
+        mkAttr("foo", "a"),
+        Ascending
+      ),
+      SortOrder(
+        mkAttr("foo", "b"),
+        Descending
+      )
+    ))) should be(" ORDER BY foo.`a` ASC, foo.`b` DESC")
   }
 
   "QueryBuilder.compileExpression" should "compile the expressions to SQL" in {
@@ -236,22 +303,22 @@ class QueryBuilderSpec extends FlatSpec with Matchers {
   "QueryBuilder.compileExpression" should "compile udfs" in {
     val cases = Seq(
       (Language(mkCol("foo", "a"), mkCol("foo", "b")),
-        "language(foo.`a`, foo.`b`)"),
+        "`language`(foo.`a`, foo.`b`)"),
 
       (Uast(mkCol("foo", "a"), mkCol("foo", "b"), mkCol("foo", "c")),
-        "uast(foo.`a`, foo.`b`, foo.`c`)"),
+        "`uast`(foo.`a`, foo.`b`, foo.`c`)"),
 
       (UastChildren(mkCol("foo", "a")),
-        "uast_children(foo.`a`)"),
+        "`uast_children`(foo.`a`)"),
 
       (UastExtract(mkCol("foo", "a"), mkCol("foo", "b")),
-        "uast_extract(foo.`a`, foo.`b`)"),
+        "`uast_extract`(foo.`a`, foo.`b`)"),
 
       (UastMode(mkCol("foo", "a"), mkCol("foo", "b"), mkCol("foo", "c")),
-        "uast_mode(foo.`a`, foo.`b`, foo.`c`)"),
+        "`uast_mode`(foo.`a`, foo.`b`, foo.`c`)"),
 
       (UastXPath(mkCol("foo", "a"), mkCol("foo", "b")),
-        "uast_xpath(foo.`a`, foo.`b`)")
+        "`uast_xpath`(foo.`a`, foo.`b`)")
     )
 
     cases.foreach {

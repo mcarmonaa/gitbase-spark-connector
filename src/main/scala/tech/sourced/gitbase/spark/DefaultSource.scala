@@ -43,21 +43,13 @@ class DefaultSource extends DataSourceV2 with ReadSupport {
 
     val schema = Gitbase.resolveTable(servers.head, table)
 
-    DefaultReader(servers, schema, TableSource(table))
+    DefaultReader(servers, schema, Table(table))
   }
 }
 
-sealed trait DataSource
-
-case class TableSource(table: String) extends DataSource
-
-case class JoinedSource(left: DataSource,
-                        right: DataSource,
-                        conditions: Option[Expression] = None) extends DataSource
-
 case class DefaultReader(servers: Seq[GitbaseServer],
                          schema: StructType,
-                         source: DataSource
+                         node: Node
                         ) extends DataSourceReader
   with SupportsPushDownRequiredColumns
   with SupportsPushDownCatalystFilters
@@ -73,12 +65,12 @@ case class DefaultReader(servers: Seq[GitbaseServer],
       AttributeReference(col.name, col.dataType, col.nullable, col.metadata)()
     })
 
-    val query = QueryBuilder(fields, source, filters, schema).sql
-    logDebug(s"executing query: $query")
+    val q = QueryBuilder(node.fitSchema(fields), schema, Query(filters=filters)).sql
+    logDebug(s"executing query: $q")
 
     val list = new java.util.ArrayList[DataReaderFactory[Row]]()
     for (server <- servers) {
-      list.add(DefaultDataReaderFactory(server, query))
+      list.add(DefaultDataReaderFactory(server, q))
     }
 
     list

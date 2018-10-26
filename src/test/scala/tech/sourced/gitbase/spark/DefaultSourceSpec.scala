@@ -19,6 +19,8 @@ class DefaultSourceSpec extends BaseGitbaseSpec {
         |WHERE r.history_index = 0
       """.stripMargin)
 
+    df.explain(true)
+
     df.count() should be(56)
     for (row <- df.collect()) {
       row.length should be(15)

@@ -19,6 +19,6 @@ package object udf {
 
   def registerUDFs(ss: SparkSession): Unit = {
     spark = ss
-    udfs.foreach(f => spark.udf.register(f.name, f.function))
+    udfs.foreach(f => spark.udf.register(f.name, f.function.withName(f.name)))
   }
 }
