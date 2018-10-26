@@ -16,7 +16,7 @@ object PushdownTree extends Rule[LogicalPlan] {
 
     case n@logical.Project(list, DataSourceV2Relation(_, DefaultReader(servers, schema, query))) =>
       if (!canBeHandled(list) || containsDuplicates(list)) {
-        n
+        fixAttributeReferences(n)
       } else {
         val newSchema = StructType(list.map(e => StructField(e.name, e.dataType, e.nullable, e.metadata)))
         val newOutput = list.map(e => AttributeReference(e.name, e.dataType, e.nullable, e.metadata)())
@@ -32,7 +32,7 @@ object PushdownTree extends Rule[LogicalPlan] {
 
     case n@logical.Filter(expr, DataSourceV2Relation(out, DefaultReader(servers, schema, query))) =>
       if (!canBeHandled(Seq(expr))) {
-        n
+        fixAttributeReferences(n)
       } else {
         DataSourceV2Relation(
           out,
@@ -47,7 +47,7 @@ object PushdownTree extends Rule[LogicalPlan] {
     // We should only push down local sorts.
     case n@logical.Sort(order, false, DataSourceV2Relation(out, DefaultReader(servers, schema, query))) =>
       if (!canBeHandled(order.map(_.child))) {
-        n
+        fixAttributeReferences(n)
       } else {
         DataSourceV2Relation(
           out,
@@ -77,7 +77,7 @@ object PushdownTree extends Rule[LogicalPlan] {
   }
 
   private def containsDuplicates(exprs: Seq[NamedExpression]): Boolean = {
-    exprs.groupBy(_.name).values.map(_.length).forall(_ > 1)
+    exprs.groupBy(_.name).values.map(_.length).exists(_ > 1)
   }
 
 }
