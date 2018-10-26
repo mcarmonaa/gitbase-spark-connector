@@ -6,10 +6,8 @@ import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.udf
 import org.bblfsh.client.BblfshClient
 
-import scala.util.{Failure, Success, Try}
 
-
-object Uast extends CustomUDF with Logging{
+object Uast extends CustomUDF with Logging {
   /** Name of the function. */
   override val name: String = "uast"
 
@@ -18,33 +16,35 @@ object Uast extends CustomUDF with Logging{
 
   def get(content: Array[Byte],
           lang: String = "",
-          query: String = ""): Option[Array[Byte]] = {
+          query: String = ""): Option[Array[Byte]] =
+    try {
+      if (content == null || content.isEmpty) {
+        return None
+      }
 
-    if (content == null || content.isEmpty) {
-      None
-    } else {
-      val c = BblfshUtils.getClient()
-      Try(c.parse("", new String(content, "UTF-8"), Option(lang).getOrElse(""))) match {
-        case Success(res) => {
-          if (res.status != Status.OK) {
-            log.warn(s"couldn't get UAST : error ${res.status}: ${res.errors.mkString("; ")}")
-            None
-          } else {
-            val nodes = Option(query).getOrElse("") match {
-              case "" => Seq(res.uast.get)
-              case q: String => {
-                BblfshClient.filter(res.uast.get, q)
-              }
-            }
+      if (!BblfshUtils.isSupportedLanguage(lang)) {
+        return None
+      }
 
-            BblfshUtils.marshalNodes(nodes)
-          }
-        }
-        case Failure(e) => {
-          log.error(s"couldn't get UAST: ${e}")
-          None
+      val res = BblfshUtils
+        .getClient().parse("", new String(content, "UTF-8"), lang)
+
+      if (res.status != Status.OK) {
+        log.warn(s"couldn't get UAST : error ${res.status}: ${res.errors.mkString("; ")}")
+        return None
+      }
+
+      val nodes = query match {
+        case "" => Seq(res.uast.get)
+        case q: String => {
+          BblfshClient.filter(res.uast.get, q)
         }
       }
+
+      BblfshUtils.marshalNodes(nodes)
+    } catch {
+      case e@(_: RuntimeException | _: Exception) =>
+        log.error(s"couldn't get UAST: $e")
+        None
     }
-  }
 }
