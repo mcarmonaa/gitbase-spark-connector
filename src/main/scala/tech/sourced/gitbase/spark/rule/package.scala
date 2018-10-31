@@ -1,10 +1,11 @@
 package tech.sourced.gitbase.spark
 
-import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference}
 import org.apache.spark.sql.catalyst.plans.logical
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
+import org.apache.spark.sql.types.{StructField, StructType}
 
 package object rule {
 
@@ -12,8 +13,29 @@ package object rule {
     List(
       AddSource,
       PushdownJoins,
-      PushdownTree
+      PushdownTree,
+      PushdownAggregations
     )
+  }
+
+  /**
+    * Creates a schema from a list of attributes.
+    *
+    * @param attributes list of attributes
+    * @return resultant schema
+    */
+  private[rule] def attributesToSchema(attributes: Seq[AttributeReference]): StructType =
+    StructType(
+      attributes
+        .map((a: Attribute) => StructField(a.name, a.dataType, a.nullable, a.metadata))
+        .toArray
+    )
+
+  private[rule] def containsGroupBy(node: Node): Boolean = {
+    (node transformSingleDown {
+      case n: GroupBy => Some(n)
+      case _ => None
+    }).isDefined
   }
 
   private[rule] def fixAttributeReferences(plan: LogicalPlan): LogicalPlan = {

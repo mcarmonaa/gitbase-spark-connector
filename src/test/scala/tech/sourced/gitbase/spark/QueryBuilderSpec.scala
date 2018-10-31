@@ -83,7 +83,7 @@ class QueryBuilderSpec extends FlatSpec with Matchers {
         mkAttr("foo", "bar"),
         Literal(1, IntegerType)
       )
-    ))) should be(s"WHERE (${qualify("foo", "bar")} = 1)")
+    ))) should be(s" WHERE (${qualify("foo", "bar")} = 1)")
 
     qb.whereClause(Query(filters = Seq(
       EqualTo(
@@ -94,7 +94,7 @@ class QueryBuilderSpec extends FlatSpec with Matchers {
         mkAttr("foo", "baz"),
         Literal(2, IntegerType)
       )
-    ))) should be(s"WHERE (${qualify("foo", "bar")} = 1) " +
+    ))) should be(s" WHERE (${qualify("foo", "bar")} = 1) " +
       s"AND (${qualify("foo", "baz")} = 2)")
   }
 
@@ -337,6 +337,44 @@ class QueryBuilderSpec extends FlatSpec with Matchers {
       case (udf, expected) =>
         compileExpression(udf.expr).get should be(expected)
     }
+  }
+
+  "QueryBuilder" should "correctly generate subqueries in queries with multiple projects" in {
+    QueryBuilder(
+      Project(
+        Seq(
+          mkAttr("foo", "a")
+        ),
+        Project(
+          Seq(
+            mkAttr("foo", "a"),
+            mkAttr("foo", "b")
+          ),
+          Table("foo")
+        )
+      )
+    ).sql should be("SELECT foo.`a` FROM (SELECT foo.`a`, foo.`b` FROM foo) AS `t`")
+  }
+
+  "QueryBuilder" should "correctly generate subqueries in queries with groupby and projects" in {
+    QueryBuilder(
+      GroupBy(
+        Seq(
+          mkAttr("foo", "a")
+        ),
+        Seq(
+          mkAttr("foo", "a")
+        ),
+        Project(
+          Seq(
+            mkAttr("foo", "a"),
+            mkAttr("foo", "b")
+          ),
+          Table("foo")
+        )
+      )
+    ).sql should be("SELECT foo.`a` FROM (SELECT foo.`a`, foo.`b` FROM foo) AS `t`" +
+      " GROUP BY foo.`a`")
   }
 }
 

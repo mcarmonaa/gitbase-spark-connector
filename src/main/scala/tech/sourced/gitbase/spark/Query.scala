@@ -18,17 +18,67 @@ import org.apache.spark.sql.catalyst.expressions.{
   */
 case class Query(project: Seq[Expression] = Seq(),
                  filters: Seq[Expression] = Seq(),
+                 subquery: Option[Query] = None,
                  source: Option[Node] = None,
-                 sort: Seq[SortOrder] = Seq()) {
+                 sort: Seq[SortOrder] = Seq(),
+                 grouping: Seq[Expression] = Seq()) {
+
+  private def removeSources(e: Seq[Expression]): Seq[Expression] =
+    e.map(_.transformUp {
+      case x: AttributeReference =>
+        AttributeReference(x.name, x.dataType, x.nullable)()
+    })
+
+  private def removeSourcesFromSort(e: Seq[SortOrder]): Seq[SortOrder] =
+    e.map(s => {
+      val child = s.child.transformUp {
+        case x: AttributeReference =>
+          AttributeReference(x.name, x.dataType, x.nullable)()
+      }
+      SortOrder(child, s.direction)
+    })
+
+  private def withoutSources: Query = {
+    Query(
+      removeSources(project),
+      removeSources(filters),
+      subquery,
+      source,
+      removeSourcesFromSort(sort),
+      removeSources(grouping)
+    )
+  }
 
   /**
     * Creates a new query replacing the projected columns with the given ones.
+    * If there is already a projection, it will be treated as a subquery.
     *
     * @param project given projected columns
     * @return new query
     */
   def withProject(project: Seq[Expression]): Query =
-    Query(project, filters, source, sort)
+    if (this.project.isEmpty) {
+      Query(project, filters, subquery, source, sort, grouping)
+    } else {
+      Query(project, subquery = Some(this)).withoutSources
+    }
+
+  /**
+    * Creates a new query replacing the grouping columns and the projection
+    * with the given ones. If there is already a projection, it will wrap the
+    * current query, making it a subquery.
+    *
+    * @param project  projection columns
+    * @param grouping columns
+    * @return new query
+    */
+  def withGroupBy(project: Seq[Expression], grouping: Seq[Expression]): Query =
+    if (this.project.isEmpty) {
+      Query(project, filters, subquery, source, sort, grouping)
+    } else {
+      Query(project = project, subquery = Some(this), grouping = grouping)
+        .withoutSources
+    }
 
   /**
     * Creates a new query adding the given filters to those already
@@ -37,8 +87,14 @@ case class Query(project: Seq[Expression] = Seq(),
     * @param filters Given filters
     * @return new query
     */
-  def withFilters(filters: Seq[Expression]): Query =
-    Query(project, this.filters ++ filters, source, sort)
+  def withFilters(filters: Seq[Expression]): Query = {
+    val f = if (subquery.isDefined) {
+      removeSources(filters)
+    } else {
+      filters
+    }
+    Query(project, this.filters ++ f, subquery, source, sort, grouping)
+  }
 
   /**
     * Creates a new query replacing the source with the given one.
@@ -47,7 +103,7 @@ case class Query(project: Seq[Expression] = Seq(),
     * @return new query
     */
   def withSource(source: Node): Query =
-    Query(project, filters, Some(source), sort)
+    Query(project, filters, subquery, Some(source), sort, grouping)
 
   /**
     * Creates a new query replacing the sort fields with the given ones.
@@ -55,8 +111,14 @@ case class Query(project: Seq[Expression] = Seq(),
     * @param sort sort fields given
     * @return new query
     */
-  def withSort(sort: Seq[SortOrder]): Query =
-    Query(project, filters, source, sort)
+  def withSort(sort: Seq[SortOrder]): Query = {
+    val s = if (subquery.isDefined) {
+      removeSourcesFromSort(sort)
+    } else {
+      sort
+    }
+    Query(project, filters, subquery, source, s, grouping)
+  }
 
 }
 
@@ -80,10 +142,10 @@ sealed trait Node {
     if (!hasProjection && fields.nonEmpty) {
       Project(fields, this)
     } else {
-      transformUp {
+      transformSingleDown {
         case Project(exprs, child) =>
           if (fields.isEmpty) {
-            child
+            Some(child)
           } else {
             val newProjection = fields.flatMap(f => exprs.find {
               case e: NamedExpression => e.name == f.name
@@ -96,11 +158,28 @@ sealed trait Node {
                 s"Projection: ${exprs.mkString(", ")}")
             }
 
-            Project(newProjection, child)
+            Some(Project(newProjection, child))
           }
-        case n => n
+        case GroupBy(agg, grouping, child) =>
+          if (agg.isEmpty) {
+            Some(child)
+          } else {
+            val newProjection = fields.flatMap(f => agg.find {
+              case e: NamedExpression => e.name == f.name
+              case _ => false
+            })
+
+            if (fields.length != newProjection.length) {
+              throw new SparkException("This is likely a bug, could not fit group by to " +
+                s"schema. Schema: ${fields.map(_.name).mkString(", ")}, " +
+                s"Aggregation: ${agg.mkString(", ")}")
+            }
+
+            Some(GroupBy(newProjection, grouping, child))
+          }
+        case n => None
       }
-    }
+    }.getOrElse(this)
   }
 
   /**
@@ -111,13 +190,13 @@ sealed trait Node {
   def hasProjection: Boolean
 
   /**
-    * Transforms the tree from the innermost node to the outermost by applying
-    * the given function.
+    * Transforms the tree from the outermost node to the innermost until a
+    * single node is transformed, then stops.
     *
     * @param fn transform function
-    * @return transformed node
+    * @return transformed node, if any.
     */
-  def transformUp(fn: Node => Node): Node
+  def transformSingleDown(fn: Node => Option[Node]): Option[Node]
 }
 
 /**
@@ -131,7 +210,7 @@ case class Table(name: String) extends Node {
 
   override def hasProjection: Boolean = false
 
-  override def transformUp(fn: Node => Node): Node = fn(this)
+  override def transformSingleDown(fn: Node => Option[Node]): Option[Node] = fn(this)
 }
 
 /**
@@ -147,8 +226,13 @@ case class Join(left: Node, right: Node, condition: Option[Expression]) extends 
 
   override def hasProjection: Boolean = left.hasProjection || right.hasProjection
 
-  override def transformUp(fn: Node => Node): Node =
-    fn(Join(fn(left), fn(right), condition))
+  override def transformSingleDown(fn: Node => Option[Node]): Option[Node] = {
+    fn(this).orElse(
+      fn(left).map(x => Join(x, right, condition)).orElse(
+        fn(right).map(x => Join(left, x, condition))
+      )
+    )
+  }
 }
 
 /**
@@ -163,8 +247,11 @@ case class Project(projection: Seq[Expression], child: Node) extends Node {
 
   override def hasProjection: Boolean = true
 
-  override def transformUp(fn: Node => Node): Node =
-    fn(Project(projection, fn(child)))
+  override def transformSingleDown(fn: Node => Option[Node]): Option[Node] = {
+    fn(this).orElse(
+      fn(child).map(x => Project(projection, x))
+    )
+  }
 }
 
 /**
@@ -179,8 +266,11 @@ case class Filter(filters: Seq[Expression], child: Node) extends Node {
 
   override def hasProjection: Boolean = child.hasProjection
 
-  override def transformUp(fn: Node => Node): Node =
-    fn(Filter(filters, fn(child)))
+  override def transformSingleDown(fn: Node => Option[Node]): Option[Node] = {
+    fn(this).orElse(
+      fn(child).map(x => Filter(filters, x))
+    )
+  }
 }
 
 /**
@@ -195,7 +285,32 @@ case class Sort(fields: Seq[SortOrder], child: Node) extends Node {
 
   override def hasProjection: Boolean = child.hasProjection
 
-  override def transformUp(fn: Node => Node): Node =
-    fn(Sort(fields, fn(child)))
+  override def transformSingleDown(fn: Node => Option[Node]): Option[Node] = {
+    fn(this).orElse(
+      fn(child).map(x => Sort(fields, x))
+    )
+  }
+}
+
+/**
+  * Aggregation the child node.
+  *
+  * @param aggregate aggregate columns
+  * @param grouping  grouping columns
+  * @param child     child node
+  */
+case class GroupBy(aggregate: Seq[Expression],
+                   grouping: Seq[Expression],
+                   child: Node) extends Node {
+  override def buildQuery(q: Query): Query =
+    child.buildQuery(q).withGroupBy(aggregate, grouping)
+
+  override def hasProjection: Boolean = true
+
+  override def transformSingleDown(fn: Node => Option[Node]): Option[Node] = {
+    fn(this).orElse(
+      fn(child).map(x => GroupBy(aggregate, grouping, x))
+    )
+  }
 }
 
