@@ -3,16 +3,16 @@ package tech.sourced.gitbase.spark.udf
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.scalatest.{FlatSpec, Matchers, Suite}
-import tech.sourced.gitbase.spark.util
 import tech.sourced.gitbase.spark.rule
+import tech.sourced.gitbase.spark.{defaultConfig, injectRules}
 
 trait BaseUdfSpec extends FlatSpec with Matchers { this: Suite =>
 
   val spark: SparkSession = SparkSession.builder().appName("test")
     .master("local[*]")
     .config("spark.driver.host", "localhost")
-    .config(new SparkConf(false).setAll(util.defaultConfig))
-    .withExtensions(util.injectRules(rule.getAll))
+    .config(new SparkConf(false).setAll(defaultConfig))
+    .withExtensions(injectRules(rule.getAll))
     .getOrCreate()
 
   import spark.implicits._

@@ -37,7 +37,7 @@ You can configure where **gitbase** and **bblfsh** are listening by the environm
 Finally you can add the gitbase `DataSource` and configuration just registering in the spark session.
 
 ```scala
-import tech.sourced.gitbase.spark.util.GitbaseSessionBuilder
+import tech.sourced.gitbase.spark.GitbaseSessionBuilder
 
 val spark = SparkSession.builder().appName("test")
     .master("local[*]")
