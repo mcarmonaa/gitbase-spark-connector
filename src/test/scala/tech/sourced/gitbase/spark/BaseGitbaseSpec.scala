@@ -4,7 +4,7 @@ import java.nio.file.Paths
 import java.util.concurrent.TimeUnit
 
 import com.github.dockerjava.api.DockerClient
-import com.github.dockerjava.api.model.{Bind, PortBinding}
+import com.github.dockerjava.api.model.{Bind, Network, PortBinding}
 import com.github.dockerjava.core.DockerClientBuilder
 import com.github.dockerjava.core.command.PullImageResultCallback
 import org.apache.spark.internal.Logging
@@ -18,6 +18,7 @@ trait BaseGitbaseSpec extends FlatSpec with Matchers with BeforeAndAfterAll with
 
   private val gitbaseVersion = "v0.17.0"
   private val gitbaseImage = "srcd/gitbase"
+  private val dockerNetwork = "test-gitbase-spark-connector"
 
   case class Container(var id: String,
                        name: String,
@@ -46,7 +47,7 @@ trait BaseGitbaseSpec extends FlatSpec with Matchers with BeforeAndAfterAll with
 
   import tech.sourced.gitbase.spark.util.GitbaseSessionBuilder
 
-  lazy val spark = SparkSession.builder().appName("test")
+  lazy val spark: SparkSession = SparkSession.builder().appName("test")
     .master("local[*]")
     .config("spark.driver.host", "localhost")
     .registerGitbaseSource(server)
@@ -67,6 +68,12 @@ trait BaseGitbaseSpec extends FlatSpec with Matchers with BeforeAndAfterAll with
     }
 
     client = DockerClientBuilder.getInstance().build()
+
+    val networkId = client.listNetworksCmd().exec().toArray().find(n => {
+      n.asInstanceOf[Network].getName == dockerNetwork
+    }).map(_.asInstanceOf[Network].getId)
+      .getOrElse(client.createNetworkCmd().withName(dockerNetwork).exec().getId)
+
     val ok = client.pullImageCmd(gitbaseImage)
       .withTag(gitbaseVersion)
       .exec(new PullImageResultCallback())
@@ -92,10 +99,16 @@ trait BaseGitbaseSpec extends FlatSpec with Matchers with BeforeAndAfterAll with
       .withPortBindings(PortBinding.parse(s"${container.port}:3306"))
       .withBinds(Bind.parse(container.bind))
       .exec()
-      .getId()
+      .getId
 
     client.startContainerCmd(container.id).exec()
     logInfo(s"started container ${container.id} at port ${container.port}")
+
+    client.connectToNetworkCmd()
+      .withContainerId(container.id)
+      .withNetworkId(networkId)
+      .exec()
+    logInfo(s"connected container ${container.id} to network $dockerNetwork")
   }
 
   override protected def afterAll(): Unit = {

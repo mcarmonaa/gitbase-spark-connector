@@ -16,7 +16,9 @@ services:
   - docker
 
 before_script:
+  - docker network create test-gitbase-spark-connector
   - docker run -d --rm --name bblfshd --privileged -p 9432:9432 bblfsh/bblfshd:v2.9.1-drivers
+  - docker network connect test-gitbase-spark-connector bblfshd
 
 script:
   - sbt ++$TRAVIS_SCALA_VERSION -J-XX:MaxMetaspaceSize=1024M clean scalastyle coverage test coverageReport assembly
