@@ -45,8 +45,6 @@ trait BaseGitbaseSpec extends FlatSpec with Matchers with BeforeAndAfterAll with
       case v => v.split(",").head.trim
     }
 
-  import tech.sourced.gitbase.spark.util.GitbaseSessionBuilder
-
   lazy val spark: SparkSession = SparkSession.builder().appName("test")
     .master("local[*]")
     .config("spark.driver.host", "localhost")
