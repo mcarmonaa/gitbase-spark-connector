@@ -25,7 +25,7 @@ trait BaseGitbaseSpec extends FlatSpec with Matchers with BeforeAndAfterAll with
                        image: String,
                        imageVersion: String,
                        bind: String,
-                       ip:String,
+                       ip: String,
                        port: String)
 
   private val container = Container(
@@ -44,6 +44,8 @@ trait BaseGitbaseSpec extends FlatSpec with Matchers with BeforeAndAfterAll with
       case v if v.isEmpty => ""
       case v => v.split(",").head.trim
     }
+  private val bblfshEndpoint = scala.util.Properties
+    .envOrElse("BBLFSH_ENDPOINT", "bblfshd:9432")
 
   lazy val spark: SparkSession = SparkSession.builder().appName("test")
     .master("local[*]")
@@ -70,7 +72,9 @@ trait BaseGitbaseSpec extends FlatSpec with Matchers with BeforeAndAfterAll with
     val networkId = client.listNetworksCmd().exec().toArray().find(n => {
       n.asInstanceOf[Network].getName == dockerNetwork
     }).map(_.asInstanceOf[Network].getId)
-      .getOrElse(client.createNetworkCmd().withName(dockerNetwork).exec().getId)
+      .getOrElse(
+        client.createNetworkCmd().withName(dockerNetwork).exec().getId
+      )
 
     val ok = client.pullImageCmd(gitbaseImage)
       .withTag(gitbaseVersion)
@@ -96,6 +100,7 @@ trait BaseGitbaseSpec extends FlatSpec with Matchers with BeforeAndAfterAll with
       .withName("test-gitbase-" ++ container.name)
       .withPortBindings(PortBinding.parse(s"${container.port}:3306"))
       .withBinds(Bind.parse(container.bind))
+      .withEnv(s"BBLFSH_ENDPOINT=$bblfshEndpoint")
       .exec()
       .getId
 
