@@ -5,20 +5,21 @@ import java.util.NoSuchElementException
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.{Inner, JoinType}
-import org.apache.spark.sql.catalyst.plans.logical._
+import org.apache.spark.sql.catalyst.plans.logical
+import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
 import org.apache.spark.sql.types.{Metadata, StructField, StructType}
 import tech.sourced.gitbase.spark._
 
 object PushdownJoins extends Rule[LogicalPlan] {
-  /** @inheritdoc*/
+  /** @inheritdoc */
   def apply(plan: LogicalPlan): LogicalPlan = {
     val schema = plan.schema
     val result = plan transformUp {
       // Joins are only applicable per repository, so we can push down completely
       // the join into the data source
-      case q: Join =>
+      case q: logical.Join =>
         val jd = JoinOptimizer.getJoinData(q)
         if (!jd.valid) {
           return q
@@ -36,15 +37,15 @@ object PushdownJoins extends Rule[LogicalPlan] {
             )
 
             val filteredNode = filters match {
-              case Some(filter) => Filter(filter, node)
+              case Some(filter) => logical.Filter(filter, node)
               case None => node
             }
 
             // If the projection is empty, project the original schema.
             if (projectExprs.nonEmpty) {
-              Project(projectExprs, filteredNode)
+              logical.Project(projectExprs, filteredNode)
             } else {
-              Project(
+              logical.Project(
                 attributes,
                 filteredNode
               )
@@ -53,14 +54,24 @@ object PushdownJoins extends Rule[LogicalPlan] {
         }
 
       // Remove two consecutive projects and replace it with the outermost one.
-      case Project(list, Project(_, child)) =>
-        Project(list, child)
+      case logical.Project(list, logical.Project(_, child)) =>
+        logical.Project(list, child)
     } transformUp {
       // Deduplicate columns with the same name. Joined gitbase tables will
       // always have the same value in columns with the same name, so it's
       // safe to deduplicate.
       case DataSourceV2Relation(out, DefaultReader(servers, _, source)) =>
-        val newOut = out.groupBy(_.name).values.map(_.head).toSeq
+        val names = out.map(_.name).distinct.toBuffer
+        val newOut = out.flatMap(x => {
+          val idx = names.indexOf(x.name)
+          if (idx >= 0) {
+            names.remove(idx)
+            Some(x)
+          } else {
+            None
+          }
+        })
+
         DataSourceV2Relation(
           newOut,
           DefaultReader(
@@ -74,44 +85,25 @@ object PushdownJoins extends Rule[LogicalPlan] {
       // pointing to the correct deduplicated column. So we need to replace
       // these attributes with the one that's available, trying to get the exact
       // match if possible.
-      case n =>
-        import JoinOptimizer._
-        val availableAttrs: Seq[Attribute] = n.children.flatMap(child => {
-          child.find {
-            case _: Project => true
-            case DataSourceV2Relation(_, _: DefaultReader) => true
-            case _: Join => true
-            case _ => false
-          } match {
-            case Some(Project(attrs, _)) => attrs.map(_.toAttribute)
-            case Some(DataSourceV2Relation(output, _: DefaultReader)) => output
-            case _ => Seq()
-          }
-        })
-
-        n.transformExpressionsUp {
-          case a: Attribute =>
-            val candidates = availableAttrs.filter(attr => attr.name == a.name
-              && hasSource(attr))
-            if (candidates.nonEmpty) {
-              val exactMatch = candidates.find(attr => getSource(a) == getSource(attr))
-              exactMatch match {
-                case Some(attr) => attr
-                case None => candidates.head
-              }
-            } else {
-              a
-            }
-          case x => x
-        }
+      case n => fixAttributeReferences(n)
     }
 
-    result
+    // After the deduplication SELECT * will require a new project to have the
+    // same schema as it did before.
+    if (result.schema.length != schema.length) {
+      fixAttributeReferences(logical.Project(
+        schema.fields.map(col =>
+          AttributeReference(col.name, col.dataType, col.nullable, col.metadata)()),
+        result
+      ))
+    } else {
+      result
+    }
   }
 
 }
 
-case class JoinData(source: Option[DataSource] = None,
+case class JoinData(source: Option[Node] = None,
                     conditions: Option[Expression] = None,
                     filter: Option[Expression] = None,
                     project: Seq[NamedExpression] = Nil,
@@ -144,7 +136,7 @@ private[rule] object JoinOptimizer extends Logging {
     * @param j join to get the data from
     * @return join data
     */
-  private[rule] def getJoinData(j: Join): JoinData = {
+  private[rule] def getJoinData(j: logical.Join): JoinData = {
     // left and right ends in a GitRelation
     val leftRel = getGitbaseRelation(j.left)
     val rightRel = getGitbaseRelation(j.right)
@@ -180,16 +172,16 @@ private[rule] object JoinOptimizer extends Logging {
 
     // Check if the Join contains all valid Nodes
     val jd: Seq[JoinData] = j.map {
-      case jm@Join(_, _, _, condition) =>
+      case jm@logical.Join(_, _, _, condition) =>
         if (jm == j) {
           JoinData(conditions = condition, valid = true)
         } else {
           logUnableToOptimize(s"Invalid node: $jm")
           JoinData()
         }
-      case Filter(cond, _) =>
+      case logical.Filter(cond, _) =>
         JoinData(filter = Some(cond), valid = true)
-      case Project(namedExpressions, _) =>
+      case logical.Project(namedExpressions, _) =>
         JoinData(project = namedExpressions, valid = true)
       case DataSourceV2Relation(out, DefaultReader(servers, _, source)) =>
         JoinData(Some(source), attributes = out, servers = servers, valid = true)
@@ -203,14 +195,15 @@ private[rule] object JoinOptimizer extends Logging {
 
   private def getRelationTables(left: DataSourceV2Relation,
                                 right: DataSourceV2Relation): Seq[String] = {
-    val leftSource = left.reader.asInstanceOf[DefaultReader].source
-    val rightSource = right.reader.asInstanceOf[DefaultReader].source
+    val leftSource = left.reader.asInstanceOf[DefaultReader].node
+    val rightSource = right.reader.asInstanceOf[DefaultReader].node
     (getSourceTables(leftSource) ++ getSourceTables(rightSource)).distinct
   }
 
-  private def getSourceTables(s: DataSource): Seq[String] = s match {
-    case TableSource(t) => Seq(t)
-    case JoinedSource(left, right, _) => (getSourceTables(left) ++ getSourceTables(right)).distinct
+  private def getSourceTables(s: Node): Seq[String] = s match {
+    case Table(t) => Seq(t)
+    case Join(left, right, _) => (getSourceTables(left) ++ getSourceTables(right)).distinct
+    case _ => Seq()
   }
 
   private def conditionsAllowPushdown(expression: Expression,
@@ -250,7 +243,7 @@ private[rule] object JoinOptimizer extends Logging {
       )
 
       val source = (jd1.source, jd2.source) match {
-        case (Some(s1), Some(s2)) => Some(JoinedSource(s1, s2, conditions))
+        case (Some(s1), Some(s2)) => Some(Join(s1, s2, conditions))
         case (Some(s1), None) => Some(s1)
         case (None, Some(s1)) => Some(s1)
         case _ => None
@@ -282,7 +275,7 @@ private[rule] object JoinOptimizer extends Logging {
     * @param j join
     * @return is supported or not
     */
-  def isJoinSupported(j: Join): Boolean = supportedJoinTypes.contains(j.joinType)
+  def isJoinSupported(j: logical.Join): Boolean = supportedJoinTypes.contains(j.joinType)
 
   /**
     * Retrieves all the unsupported conditions in the join.
@@ -292,7 +285,7 @@ private[rule] object JoinOptimizer extends Logging {
     * @param right right relation
     * @return unsupported conditions
     */
-  def getUnsupportedConditions(join: Join,
+  def getUnsupportedConditions(join: logical.Join,
                                left: DataSourceV2Relation,
                                right: DataSourceV2Relation): Set[Attribute] = {
     val leftReferences = left.references.baseSet

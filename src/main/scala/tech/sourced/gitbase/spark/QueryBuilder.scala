@@ -28,10 +28,12 @@ object QueryBuilder {
   // scalastyle:off cyclomatic.complexity
   def compileExpression(expr: Expression): Option[String] = {
     expr match {
+      case Alias(child, name) => compileExpression(child)
+        .map(x => s"$x AS `$name`")
       case ScalaUDF(_, _, children, _, Some(name), _, _) =>
         val args = children.map(compileExpression)
         if (args.forall(_.isDefined) && udf.isSupported(name)) {
-          Some(s"$name(${args.map(_.get).mkString(", ")})")
+          Some(s"`$name`(${args.map(_.get).mkString(", ")})")
         } else {
           None
         }
@@ -115,8 +117,8 @@ object QueryBuilder {
           case _ => None
         }
 
+      // CAST(foo AS BLOB) causes a SQL exception
       case Cast(e, BinaryType, _) => compileExpression(e)
-        .map(e => s"CAST($e AS BLOB)")
 
       case Cast(e, typ, _) => compileExpression(e)
         .map(e => s"CAST($e AS ${typ.sql})")
@@ -130,21 +132,16 @@ object QueryBuilder {
 
 /**
   * Select query builder.
-  *
-  * @param fields  fields to select
-  * @param source  source to get data from
-  * @param filters filters to apply
   */
-case class QueryBuilder(fields: Seq[Attribute] = Seq(),
-                        source: DataSource = null,
-                        filters: Seq[Expression] = Seq(),
-                        schema: StructType = StructType(Seq())) {
+case class QueryBuilder(node: Node = null,
+                        schema: StructType = StructType(Seq()),
+                        query: Query = Query()) {
 
   import QueryBuilder._
 
-  def selectedFields: String =
-    if (fields.nonEmpty) {
-      fields.map(qualify).mkString(", ")
+  def selectedFields(q: Query): String =
+    if (q.project.nonEmpty) {
+      q.project.flatMap(e => compileExpression(e)).mkString(", ")
     } else {
       // when there is no field selected, such as a count of repositories,
       // just get the first field to avoid returning all the fields
@@ -155,8 +152,8 @@ case class QueryBuilder(fields: Seq[Attribute] = Seq(),
       }
     }
 
-  def whereClause: String = {
-    val compiledFilters = filters.flatMap(x => compileExpression(x))
+  def whereClause(q: Query = Query()): String = {
+    val compiledFilters = q.filters.flatMap(x => compileExpression(x))
     if (compiledFilters.isEmpty) {
       ""
     } else {
@@ -164,25 +161,40 @@ case class QueryBuilder(fields: Seq[Attribute] = Seq(),
     }
   }
 
+  def orderByClause(query: Query = Query()): String = if (query.sort.isEmpty) {
+    ""
+  } else {
+    s" ORDER BY ${query.sort.flatMap(orderByField).mkString(", ")}"
+  }
+
+  def orderByField(field: SortOrder): Option[String] = {
+    compileExpression(field.child)
+      .map(x => s"$x ${field.direction.sql}")
+  }
+
   def getOnClause(cond: Expression): String = compileExpression(cond)
     .getOrElse(throw new SparkException(s"unable to compile expression $cond"))
 
-  def sourceToSql(source: DataSource): String = source match {
-    case JoinedSource(left, right, Some(cond)) =>
+  def sourceToSql(source: Node): String = source match {
+    case Join(left, right, Some(cond)) =>
       s"${sourceToSql(left)} INNER JOIN ${sourceToSql(right)} ON ${getOnClause(cond)}"
-    case JoinedSource(left, right, None) =>
+    case Join(left, right, None) =>
       s"${sourceToSql(left)} JOIN ${sourceToSql(right)}"
-    case TableSource(name) => name
+    case Table(name) => name
+    case _ => throw new SparkException("invalid node found in query source")
   }
 
-  def selectedTables: String = sourceToSql(source)
+  def selectedTables(q: Query = Query()): String =
+    sourceToSql(q.source.getOrElse(throw new SparkException("no source found in query")))
 
   /**
     * Returns the built select SQL query.
     *
     * @return select SQL query
     */
-  def sql: String =
-    s"SELECT $selectedFields FROM $selectedTables $whereClause"
+  def sql: String = {
+    val q = node.buildQuery(query)
+    s"SELECT ${selectedFields(q)} FROM ${selectedTables(q)} ${whereClause(q)}${orderByClause(q)}"
+  }
 
 }
