@@ -31,7 +31,7 @@ object PushdownJoins extends Rule[LogicalPlan] {
               attributes,
               DefaultReader(
                 servers,
-                JoinOptimizer.attributesToSchema(attributes),
+                attributesToSchema(attributes),
                 source
               )
             )
@@ -76,7 +76,7 @@ object PushdownJoins extends Rule[LogicalPlan] {
           newOut,
           DefaultReader(
             servers,
-            JoinOptimizer.attributesToSchema(newOut),
+            attributesToSchema(newOut),
             source
           )
         )
@@ -314,19 +314,6 @@ private[rule] object JoinOptimizer extends Logging {
       case (None, re) => re
     }
   }
-
-  /**
-    * Creates a schema from a list of attributes.
-    *
-    * @param attributes list of attributes
-    * @return resultant schema
-    */
-  def attributesToSchema(attributes: Seq[AttributeReference]): StructType =
-    StructType(
-      attributes
-        .map((a: Attribute) => StructField(a.name, a.dataType, a.nullable, a.metadata))
-        .toArray
-    )
 
   /**
     * Returns the first git relation found in the given logical plan, if any.

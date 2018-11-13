@@ -3,6 +3,7 @@ package tech.sourced.gitbase.spark
 import org.apache.spark.SparkException
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.types.{BinaryType, StructType}
 
 object QueryBuilder {
@@ -10,8 +11,13 @@ object QueryBuilder {
   private val dialect = GitbaseDialect()
 
   def qualify(col: Attribute): String = {
-    val table = col.metadata.getString(Sources.SourceKey)
-    s"$table.`${col.name}`"
+    try {
+      val table = col.metadata.getString(Sources.SourceKey)
+      s"$table.`${col.name}`"
+    } catch {
+      case _: NoSuchElementException =>
+        s"`${col.name}`"
+    }
   }
 
   def qualify(table: String, col: String): String = s"$table.`$col`"
@@ -123,6 +129,29 @@ object QueryBuilder {
       case Cast(e, typ, _) => compileExpression(e)
         .map(e => s"CAST($e AS ${typ.sql})")
 
+      case Min(child) => compileExpression(child)
+        .map(e => s"MIN($e)")
+
+      case Max(child) => compileExpression(child)
+        .map(e => s"MAX($e)")
+
+      case Sum(child) => compileExpression(child)
+        .map(e => s"SUM($e)")
+
+      case Count(children) => if (children.length == 1) {
+        compileExpression(children.head).map(e => s"COUNT($e)")
+      } else {
+        None
+      }
+
+      case Average(child) => compileExpression(child)
+        .map(e => s"AVG($e)")
+
+      // We only compile non-distinct aggregations. Gitbase does not support
+      // distinct in aggregations yet.
+      case AggregateExpression(fn, _, false, _) =>
+        compileExpression(fn)
+
       case _ => None
     }
   }
@@ -157,7 +186,7 @@ case class QueryBuilder(node: Node = null,
     if (compiledFilters.isEmpty) {
       ""
     } else {
-      s"WHERE (${compiledFilters.mkString(") AND (")})"
+      s" WHERE (${compiledFilters.mkString(") AND (")})"
     }
   }
 
@@ -172,6 +201,12 @@ case class QueryBuilder(node: Node = null,
       .map(x => s"$x ${field.direction.sql}")
   }
 
+  def groupByClause(query: Query = Query()): String = if (query.grouping.isEmpty) {
+    ""
+  } else {
+    s" GROUP BY ${query.grouping.flatMap(x => compileExpression(x)).mkString(", ")}"
+  }
+
   def getOnClause(cond: Expression): String = compileExpression(cond)
     .getOrElse(throw new SparkException(s"unable to compile expression $cond"))
 
@@ -184,8 +219,22 @@ case class QueryBuilder(node: Node = null,
     case _ => throw new SparkException("invalid node found in query source")
   }
 
-  def selectedTables(q: Query = Query()): String =
-    sourceToSql(q.source.getOrElse(throw new SparkException("no source found in query")))
+  def subqueryToSql(q: Query): String = s"(${queryToSql(q)}) AS `t`"
+
+  def selectedTables(q: Query = Query()): String = (q.subquery, q.source) match {
+    case (Some(_), Some(_)) =>
+      throw new SparkException("This is likely a bug. Found source and subquery in the query.")
+    case (Some(subquery), None) =>
+      subqueryToSql(subquery)
+    case (None, Some(source)) =>
+      sourceToSql(source)
+    case (None, None) =>
+      throw new SparkException("no source or subquery found in query")
+  }
+
+  def queryToSql(q: Query): String =
+    s"SELECT ${selectedFields(q)} FROM ${selectedTables(q)}${whereClause(q)}" +
+      s"${groupByClause(q)}${orderByClause(q)}"
 
   /**
     * Returns the built select SQL query.
@@ -193,8 +242,7 @@ case class QueryBuilder(node: Node = null,
     * @return select SQL query
     */
   def sql: String = {
-    val q = node.buildQuery(query)
-    s"SELECT ${selectedFields(q)} FROM ${selectedTables(q)} ${whereClause(q)}${orderByClause(q)}"
+    queryToSql(node.buildQuery(query))
   }
 
 }

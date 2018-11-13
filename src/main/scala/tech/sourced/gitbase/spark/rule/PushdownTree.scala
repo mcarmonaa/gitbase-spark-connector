@@ -21,8 +21,10 @@ object PushdownTree extends Rule[LogicalPlan] {
 
     case n@logical.Project(
     list,
-    DataSourceV2Relation(_, DefaultReader(servers, schema, query))) =>
-      if (!canBeHandled(list) || containsDuplicates(list)) {
+    r@DataSourceV2Relation(_, DefaultReader(servers, schema, query))) =>
+      if (containsGroupBy(query)) {
+        r
+      } else if (!canBeHandled(list) || containsDuplicates(list)) {
         fixAttributeReferences(n)
       } else {
         val newSchema = StructType(
