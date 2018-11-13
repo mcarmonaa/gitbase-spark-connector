@@ -353,7 +353,7 @@ class QueryBuilderSpec extends FlatSpec with Matchers {
           Table("foo")
         )
       )
-    ).sql should be("SELECT foo.`a` FROM (SELECT foo.`a`, foo.`b` FROM foo) AS `t`")
+    ).sql should be("SELECT `a` FROM (SELECT foo.`a`, foo.`b` FROM foo) AS `t`")
   }
 
   "QueryBuilder" should "correctly generate subqueries in queries with groupby and projects" in {
@@ -373,8 +373,8 @@ class QueryBuilderSpec extends FlatSpec with Matchers {
           Table("foo")
         )
       )
-    ).sql should be("SELECT foo.`a` FROM (SELECT foo.`a`, foo.`b` FROM foo) AS `t`" +
-      " GROUP BY foo.`a`")
+    ).sql should be("SELECT `a` FROM (SELECT foo.`a`, foo.`b` FROM foo) AS `t`" +
+      " GROUP BY `a`")
   }
 }
 
