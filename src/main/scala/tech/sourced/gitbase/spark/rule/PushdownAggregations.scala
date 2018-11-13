@@ -2,7 +2,8 @@ package tech.sourced.gitbase.spark.rule
 
 import org.apache.spark.SparkException
 import org.apache.spark.sql.catalyst.expressions.aggregate._
-import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Cast, Divide, Expression, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.{
+  Alias, AttributeReference, Divide, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.logical
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -12,7 +13,7 @@ import tech.sourced.gitbase.spark._
 
 object PushdownAggregations extends Rule[LogicalPlan] {
 
-  /** @inheritdoc */
+  /** @inheritdoc*/
   def apply(plan: LogicalPlan): LogicalPlan = plan transformUp {
     // Ignore aggregates with no aggregate expressions.
     case n@logical.Aggregate(_, Nil, _) => n
@@ -57,34 +58,40 @@ object PushdownAggregations extends Rule[LogicalPlan] {
       val newAggregate = aggregate.map(e => e.transformUp {
         case n@Count(child) =>
           val cnt = newOut.find(_.name == Count(child.head).toString)
-            .getOrElse(throw new SparkException("This is likely a bug. Could not find matching COUNT" +
+            .getOrElse(throw new SparkException(
+              "This is likely a bug. Could not find matching COUNT" +
               s" to be pushed down for COUNT(${child.head})"))
           Sum(cnt)
 
         case Average(child) =>
           val sum = newOut.find(_.name == Sum(child).toString)
-            .getOrElse(throw new SparkException("This is likely a bug. Could not find matching SUM" +
+            .getOrElse(throw new SparkException(
+              "This is likely a bug. Could not find matching SUM" +
               s" to be pushed down for AVG($child)"))
           val cnt = newOut.find(_.name == Count(child).toString)
-            .getOrElse(throw new SparkException("This is likely a bug. Could not find matching COUNT" +
+            .getOrElse(throw new SparkException(
+              "This is likely a bug. Could not find matching COUNT" +
               s" to be pushed down for AVG($child)"))
           Divide(sum, cnt)
 
         case n@Min(child) =>
           val min = newOut.find(_.name == n.toString)
-            .getOrElse(throw new SparkException("This is likely a bug. Could not find matching MIN" +
+            .getOrElse(throw new SparkException(
+              "This is likely a bug. Could not find matching MIN" +
               s" to be pushed down for attribute MIN($child)"))
           Min(min)
 
         case n@Max(child) =>
           val max = newOut.find(_.name == n.toString)
-            .getOrElse(throw new SparkException("This is likely a bug. Could not find matching MAX" +
+            .getOrElse(throw new SparkException(
+              "This is likely a bug. Could not find matching MAX" +
               s" to be pushed down for attribute MAX($child)"))
           Max(max)
 
         case n@Sum(child) =>
           val sum = newOut.find(_.name == n.toString)
-            .getOrElse(throw new SparkException("This is likely a bug. Could not find matching SUM" +
+            .getOrElse(throw new SparkException(
+              "This is likely a bug. Could not find matching SUM" +
               s" to be pushed down for attribute SUM($child)"))
           Sum(sum)
 
