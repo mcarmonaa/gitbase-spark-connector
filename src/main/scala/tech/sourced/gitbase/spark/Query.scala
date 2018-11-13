@@ -140,48 +140,48 @@ sealed trait Node {
     */
   def fitSchema(fields: Seq[AttributeReference]): Node = {
     if (!hasProjection && fields.nonEmpty) {
-      return Project(fields, this)
-    }
+      Project(fields, this)
+    } else {
+      val transformed = transformSingleDown {
+        case Project(exprs, child) =>
+          if (fields.isEmpty) {
+            Some(child)
+          } else {
+            val newProjection = fields.flatMap(f => exprs.find {
+              case e: NamedExpression => e.name == f.name
+              case _ => false
+            })
 
-    val transformed = transformSingleDown {
-      case Project(exprs, child) =>
-        if (fields.isEmpty) {
-          Some(child)
-        } else {
-          val newProjection = fields.flatMap(f => exprs.find {
-            case e: NamedExpression => e.name == f.name
-            case _ => false
-          })
+            if (fields.length != newProjection.length) {
+              throw new SparkException("This is likely a bug, could not fit projection to " +
+                s"schema. Schema: ${fields.map(_.name).mkString(", ")}, " +
+                s"Projection: ${exprs.mkString(", ")}")
+            }
 
-          if (fields.length != newProjection.length) {
-            throw new SparkException("This is likely a bug, could not fit projection to " +
-              s"schema. Schema: ${fields.map(_.name).mkString(", ")}, " +
-              s"Projection: ${exprs.mkString(", ")}")
+            Some(Project(newProjection, child))
           }
+        case GroupBy(agg, grouping, child) =>
+          if (agg.isEmpty) {
+            Some(child)
+          } else {
+            val newProjection = fields.flatMap(f => agg.find {
+              case e: NamedExpression => e.name == f.name
+              case _ => false
+            })
 
-          Some(Project(newProjection, child))
-        }
-      case GroupBy(agg, grouping, child) =>
-        if (agg.isEmpty) {
-          Some(child)
-        } else {
-          val newProjection = fields.flatMap(f => agg.find {
-            case e: NamedExpression => e.name == f.name
-            case _ => false
-          })
+            if (fields.length != newProjection.length) {
+              throw new SparkException("This is likely a bug, could not fit group by to " +
+                s"schema. Schema: ${fields.map(_.name).mkString(", ")}, " +
+                s"Aggregation: ${agg.mkString(", ")}")
+            }
 
-          if (fields.length != newProjection.length) {
-            throw new SparkException("This is likely a bug, could not fit group by to " +
-              s"schema. Schema: ${fields.map(_.name).mkString(", ")}, " +
-              s"Aggregation: ${agg.mkString(", ")}")
+            Some(GroupBy(newProjection, grouping, child))
           }
+        case _ => None
+      }
 
-          Some(GroupBy(newProjection, grouping, child))
-        }
-      case _ => None
+      transformed.getOrElse(this)
     }
-
-    transformed.getOrElse(this)
   }
 
   /**
