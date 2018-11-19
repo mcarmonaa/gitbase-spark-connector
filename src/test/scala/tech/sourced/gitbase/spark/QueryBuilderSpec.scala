@@ -2,14 +2,13 @@ package tech.sourced.gitbase.spark
 
 import java.sql.{Date, Timestamp}
 
-import org.apache.spark.sql.catalyst.expressions.Literal
-import org.apache.spark.sql.types.{IntegerType, MetadataBuilder, StringType}
+import org.apache.spark.sql.Column
+import org.apache.spark.sql.catalyst.expressions
+import org.apache.spark.sql.catalyst.expressions.{Literal, _}
+import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
 import org.scalatest.{FlatSpec, Matchers}
-import QueryBuilder._
-import org.apache.spark.sql.catalyst.expressions
-import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.Column
+import tech.sourced.gitbase.spark.QueryBuilder._
 import tech.sourced.gitbase.spark.udf._
 
 class QueryBuilderSpec extends FlatSpec with Matchers {
@@ -223,7 +222,7 @@ class QueryBuilderSpec extends FlatSpec with Matchers {
         Literal(2, IntegerType)
       ), "SUBSTRING(foo.`a`, 1, 2)"),
 
-      (Cast(mkAttr("foo", "a"), IntegerType, None), "CAST(foo.`a` AS INT)"),
+      (Cast(mkAttr("foo", "a"), IntegerType, None), "CAST(foo.`a` AS SIGNED)"),
 
       (And(
         expressions.RLike(
@@ -376,7 +375,28 @@ class QueryBuilderSpec extends FlatSpec with Matchers {
     ).sql should be("SELECT `a` FROM (SELECT foo.`a`, foo.`b` FROM foo) AS `t`" +
       " GROUP BY `a`")
   }
+
+  "QueryBuilder" should "cast using MySQL types" in {
+    val types = (StringType, "CHAR") ::
+      (DateType, "DATE") ::
+      (TimestampType, "DATETIME") ::
+      (DoubleType, "DECIMAL") ::
+      (FloatType, "DECIMAL") ::
+      (LongType, "DECIMAL") ::
+      (BooleanType, "SIGNED") ::
+      (ShortType, "SIGNED") ::
+      (IntegerType, "SIGNED") ::
+      Nil
+
+    types.foreach(t => {
+      QueryBuilder(Project(
+        Cast(mkAttr("foo", "bar"), t._1) :: Nil,
+        Table("foo")
+      )).sql should equal(s"SELECT CAST(foo.`bar` AS ${t._2}) FROM foo")
+    })
+  }
 }
+
 
 object QueryBuilderUtil {
   def mkAttr(table: String, name: String): Attribute = {
