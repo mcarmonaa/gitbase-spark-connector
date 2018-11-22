@@ -4,7 +4,7 @@ import org.apache.spark.SparkException
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
-import org.apache.spark.sql.types.{BinaryType, StructType}
+import org.apache.spark.sql.types._
 
 object QueryBuilder {
 
@@ -123,11 +123,17 @@ object QueryBuilder {
           case _ => None
         }
 
-      // CAST(foo AS BLOB) causes a SQL exception
-      case Cast(e, BinaryType, _) => compileExpression(e)
-
-      case Cast(e, typ, _) => compileExpression(e)
-        .map(e => s"CAST($e AS ${typ.sql})")
+      case Cast(e, StringType, _) => compileExpression(e)
+        .map(e => s"CAST($e AS CHAR)")
+      case Cast(e, BooleanType | IntegerType | ShortType, _) => compileExpression(e)
+        .map(e => s"CAST($e AS SIGNED)")
+      case Cast(e, TimestampType, _) => compileExpression(e)
+        .map(e => s"CAST($e AS DATETIME)")
+      case Cast(e, DateType, _) => compileExpression(e)
+        .map(e => s"CAST($e AS DATE)")
+      case Cast(e, DoubleType | FloatType | LongType, _) => compileExpression(e)
+        .map(e => s"CAST($e AS DECIMAL)")
+      case Cast(e, _, _) => compileExpression(e)
 
       case Min(child) => compileExpression(child)
         .map(e => s"MIN($e)")
