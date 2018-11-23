@@ -142,7 +142,6 @@ class DefaultSourceSpec extends BaseGitbaseSpec {
 
   it should "get files from first 6 commits from HEAD references that contain" +
     " some key and are not in vendor directory" in {
-    // TODO(erizocosmico): is_binary is not supported yet
     val df = spark.sql(
       """
         |select
@@ -158,6 +157,7 @@ class DefaultSourceSpec extends BaseGitbaseSpec {
         |WHERE
         |    ref_name REGEXP '^refs/heads/HEAD/'
         |    AND history_index BETWEEN 0 AND 5
+        |    AND is_binary(blob_content) = false
         |    AND file_path NOT REGEXP '^vendor.*'
         |    AND (
         |        blob_content REGEXP '(?i)facebook.*[\'\\"][0-9a-f]{32}[\'\\"]'
