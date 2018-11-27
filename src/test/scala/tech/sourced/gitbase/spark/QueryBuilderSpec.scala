@@ -159,6 +159,12 @@ class QueryBuilderSpec extends FlatSpec with Matchers {
     ))) should be(" ORDER BY foo.`a` ASC, foo.`b` DESC")
   }
 
+  "QueryBuilder.limitClause" should "return the limit clause" in {
+    val qb = QueryBuilder()
+    qb.limitClause() should be("")
+    qb.limitClause(Query(limit=Some(5L))) should be(" LIMIT 5")
+  }
+
   "QueryBuilder.compileExpression" should "compile the expressions to SQL" in {
     val cases = Seq(
       (EqualTo(mkAttr("foo", "a"), Literal(1, IntegerType)),

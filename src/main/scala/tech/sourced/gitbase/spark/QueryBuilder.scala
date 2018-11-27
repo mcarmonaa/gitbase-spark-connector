@@ -202,6 +202,9 @@ case class QueryBuilder(node: Node = null,
     s" ORDER BY ${query.sort.flatMap(orderByField).mkString(", ")}"
   }
 
+  def limitClause(query: Query = Query()): String =
+    query.limit.map(x => s" LIMIT ${x.toString.stripSuffix("L")}").getOrElse("")
+
   def orderByField(field: SortOrder): Option[String] = {
     compileExpression(field.child)
       .map(x => s"$x ${field.direction.sql}")
@@ -240,7 +243,7 @@ case class QueryBuilder(node: Node = null,
 
   def queryToSql(q: Query): String =
     s"SELECT ${selectedFields(q)} FROM ${selectedTables(q)}${whereClause(q)}" +
-      s"${groupByClause(q)}${orderByClause(q)}"
+      s"${groupByClause(q)}${orderByClause(q)}${limitClause(q)}"
 
   /**
     * Returns the built select SQL query.

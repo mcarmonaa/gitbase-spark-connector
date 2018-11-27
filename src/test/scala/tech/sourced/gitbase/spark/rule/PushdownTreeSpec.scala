@@ -1,17 +1,9 @@
 package tech.sourced.gitbase.spark.rule
 
-import org.apache.spark.sql.catalyst.expressions.{
-  Alias,
-  Ascending,
-  Attribute,
-  CaseKeyWhen,
-  Descending,
-  EqualTo,
-  SortOrder
-}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, CaseKeyWhen, Descending, EqualTo, Literal, SortOrder}
 import org.apache.spark.sql.catalyst.plans.logical
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
-import org.apache.spark.sql.types.{StringType, StructField, StructType}
+import org.apache.spark.sql.types.{IntegerType, StringType, StructField, StructType}
 import tech.sourced.gitbase.spark._
 
 class PushdownTreeSpec extends BaseRuleSpec {
@@ -173,5 +165,29 @@ class PushdownTreeSpec extends BaseRuleSpec {
     )
 
     PushdownTree(node).isInstanceOf[logical.Sort] should be(true)
+  }
+
+  it should "push down local limits" in {
+    val node = logical.LocalLimit(
+      Literal(5, IntegerType),
+      relation
+    )
+
+    val result = PushdownTree(node)
+    result.isInstanceOf[DataSourceV2Relation] should be(true)
+    val query = result.asInstanceOf[DataSourceV2Relation].reader
+      .asInstanceOf[DefaultReader].node
+
+    query.isInstanceOf[Limit] should be(true)
+    query.asInstanceOf[Limit].limit should be(5L)
+  }
+
+  it should "not push down global limits" in {
+    val node = logical.GlobalLimit(
+      Literal(5, IntegerType),
+      relation
+    )
+
+    PushdownTree(node).isInstanceOf[logical.GlobalLimit] should be(true)
   }
 }

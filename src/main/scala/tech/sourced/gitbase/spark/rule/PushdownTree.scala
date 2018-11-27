@@ -1,9 +1,11 @@
 package tech.sourced.gitbase.spark.rule
 
+import org.apache.spark.SparkException
 import org.apache.spark.sql.catalyst.expressions.{
   And,
   AttributeReference,
   Expression,
+  Literal,
   NamedExpression
 }
 import org.apache.spark.sql.catalyst.plans.logical
@@ -21,7 +23,7 @@ object PushdownTree extends Rule[LogicalPlan] {
 
     case n@logical.Project(
     list,
-    r@DataSourceV2Relation(_, DefaultReader(servers, schema, query))) =>
+    r@DataSourceV2Relation(_, DefaultReader(servers, _, query))) =>
       if (containsGroupBy(query)) {
         r
       } else if (!canBeHandled(list) || containsDuplicates(list)) {
@@ -76,6 +78,24 @@ object PushdownTree extends Rule[LogicalPlan] {
           )
         )
       }
+
+    case logical.LocalLimit(
+    limit: Literal,
+    DataSourceV2Relation(out, DefaultReader(servers, schema, query))) =>
+      val limitNumber = limit.value match {
+        case n: Int => n.toLong
+        case n: Long => n
+        case _ => throw new SparkException("limit literal should be a number")
+      }
+
+      DataSourceV2Relation(
+        out,
+        DefaultReader(
+          servers,
+          schema,
+          Limit(limitNumber, query)
+        )
+      )
 
     case node: DataSourceV2Relation => node
 
