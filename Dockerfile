@@ -1,4 +1,4 @@
-FROM srcd/jupyter-spark:5.7.0
+FROM srcd/jupyter-spark:v5.7.0
 
 RUN mkdir -p /opt/
 
