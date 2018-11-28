@@ -1,3 +1,10 @@
+FROM openjdk:8-jdk as builder
+RUN apt-get update && apt-get install -y --no-install-recommends git
+RUN mkdir /gitbase-spark-connector
+WORKDIR /gitbase-spark-connector
+COPY . /gitbase-spark-connector
+RUN ./sbt 'set test in assembly := {}' assembly
+
 FROM srcd/jupyter-spark:v5.7.0
 
 RUN mkdir -p /opt/
@@ -21,8 +28,8 @@ RUN apt-get update && \
 
 ENV LANG en_US.UTF-8
 
-COPY /target/scala-2.11/gitbase-spark-connector-assembly-*.jar /opt/jars/
-
+COPY ./_examples/*.ipynb /home/$NB_USER/
+COPY --from=builder /gitbase-spark-connector/target/scala-2.11/gitbase-spark-connector-assembly-*.jar /opt/jars/
 
 RUN pip install jupyter-spark \
     && jupyter serverextension enable --py jupyter_spark \
@@ -32,7 +39,8 @@ RUN pip install jupyter-spark \
 
 # Separate the config file in a different RUN creation as this may change more often
 RUN echo "$SPARK_JARS $SRCD_JAR" >> /usr/local/spark/conf/spark-defaults.conf \
-    && echo "$SPARK_BBLFSH_HOST $BBLFSH_HOST\n$SPARK_BBLFSH_PORT $BBLFSH_PORT" >> /usr/local/spark/conf/spark-defaults.conf
+    && echo "$SPARK_BBLFSH_HOST $BBLFSH_HOST" >> /usr/local/spark/conf/spark-defaults.conf \
+    && echo "$SPARK_BBLFSH_PORT $BBLFSH_PORT" >> /usr/local/spark/conf/spark-defaults.conf
 
 # Disable jupyter token
 RUN mkdir -p /root/.jupyter && \
