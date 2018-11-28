@@ -21,7 +21,8 @@ case class Query(project: Seq[Expression] = Seq(),
                  subquery: Option[Query] = None,
                  source: Option[Node] = None,
                  sort: Seq[SortOrder] = Seq(),
-                 grouping: Seq[Expression] = Seq()) {
+                 grouping: Seq[Expression] = Seq(),
+                 limit: Option[Long] = None) {
 
   private def removeSources(e: Seq[Expression]): Seq[Expression] =
     e.map(_.transformUp {
@@ -45,7 +46,8 @@ case class Query(project: Seq[Expression] = Seq(),
       subquery,
       source,
       removeSourcesFromSort(sort),
-      removeSources(grouping)
+      removeSources(grouping),
+      limit
     )
   }
 
@@ -58,10 +60,13 @@ case class Query(project: Seq[Expression] = Seq(),
     */
   def withProject(project: Seq[Expression]): Query =
     if (this.project.isEmpty) {
-      Query(project, filters, subquery, source, sort, grouping)
+      Query(project, filters, subquery, source, sort, grouping, limit)
     } else {
       Query(project, subquery = Some(this)).withoutSources
     }
+
+  def withLimit(limit: Long): Query =
+    Query(project, filters, subquery, source, sort, grouping, Some(limit))
 
   /**
     * Creates a new query replacing the grouping columns and the projection
@@ -74,7 +79,7 @@ case class Query(project: Seq[Expression] = Seq(),
     */
   def withGroupBy(project: Seq[Expression], grouping: Seq[Expression]): Query =
     if (this.project.isEmpty) {
-      Query(project, filters, subquery, source, sort, grouping)
+      Query(project, filters, subquery, source, sort, grouping, limit)
     } else {
       Query(project = project, subquery = Some(this), grouping = grouping)
         .withoutSources
@@ -93,7 +98,7 @@ case class Query(project: Seq[Expression] = Seq(),
     } else {
       filters
     }
-    Query(project, this.filters ++ f, subquery, source, sort, grouping)
+    Query(project, this.filters ++ f, subquery, source, sort, grouping, limit)
   }
 
   /**
@@ -103,7 +108,7 @@ case class Query(project: Seq[Expression] = Seq(),
     * @return new query
     */
   def withSource(source: Node): Query =
-    Query(project, filters, subquery, Some(source), sort, grouping)
+    Query(project, filters, subquery, Some(source), sort, grouping, limit)
 
   /**
     * Creates a new query replacing the sort fields with the given ones.
@@ -117,7 +122,7 @@ case class Query(project: Seq[Expression] = Seq(),
     } else {
       sort
     }
-    Query(project, filters, subquery, source, s, grouping)
+    Query(project, filters, subquery, source, s, grouping, limit)
   }
 
 }
@@ -314,5 +319,26 @@ case class GroupBy(aggregate: Seq[Expression],
       fn(child).map(x => GroupBy(aggregate, grouping, x))
     )
   }
+}
+
+/**
+  * Limits the number of rows returned by the query.
+  *
+  * @param limit maximum number of rows
+  * @param child node
+  */
+case class Limit(limit: Long, child: Node) extends Node {
+
+  override def buildQuery(q: Query): Query =
+    child.buildQuery(q).withLimit(limit)
+
+  override def hasProjection: Boolean = child.hasProjection
+
+  override def transformSingleDown(fn: Node => Option[Node]): Option[Node] = {
+    fn(this).orElse(
+      fn(child).map(x => Limit(limit, x))
+    )
+  }
+
 }
 
