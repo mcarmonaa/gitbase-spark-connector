@@ -5,7 +5,7 @@ import org.apache.spark.sql.SparkSession
 package object udf {
   private[udf] var spark: SparkSession = _
 
-  private val udfs = Seq(
+  private val gitbaseUdfs = Seq(
     Language,
     Uast,
     UastMode,
@@ -15,10 +15,16 @@ package object udf {
     IsBinary
   )
 
-  def isSupported(name: String): Boolean = udfs.exists(f => f.name == name)
+  private val udfs = Seq(
+    UastExtractParse
+  )
+
+
+  def isSupported(name: String): Boolean = gitbaseUdfs.exists(f => f.name == name)
 
   def registerUDFs(ss: SparkSession): Unit = {
     spark = ss
+    gitbaseUdfs.foreach(f => spark.udf.register(f.name, f.function.withName(f.name)))
     udfs.foreach(f => spark.udf.register(f.name, f.function.withName(f.name)))
   }
 }

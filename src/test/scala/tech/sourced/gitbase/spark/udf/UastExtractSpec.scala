@@ -1,9 +1,10 @@
 package tech.sourced.gitbase.spark.udf
 
 import org.apache.spark.sql.functions.{col, lit}
-import org.apache.spark.sql.types.{ArrayType, StringType, StructField}
+import org.apache.spark.sql.types.{BinaryType, StructField}
 
 class UastExtractSpec extends BaseUdfSpec {
+
   import spark.implicits._
 
   behavior of "UastExtract"
@@ -13,7 +14,7 @@ class UastExtractSpec extends BaseUdfSpec {
       "(uast(blob_content, language(file_path,blob_content), '')," +
       " '@role') AS roles FROM " + BaseUdfSpec.filesName)
 
-    rolesDf.schema.fields should contain(StructField("roles", ArrayType(StringType)))
+    rolesDf.schema.fields should contain(StructField("roles", BinaryType))
   }
 
   it should "work as an UDF in regular code" in {
@@ -24,11 +25,10 @@ class UastExtractSpec extends BaseUdfSpec {
         lit("@role")
       ))
 
-    rolesDf.schema.fields should contain(StructField("roles", ArrayType(StringType)))
+    rolesDf.schema.fields should contain(StructField("roles", BinaryType))
   }
 
   it should "extract properties from UAST nodes" in {
-    val files = Seq("src/foo.py", "src/bar.java", "foo")
     val keys = Seq(
       "@role",
       "@type",
@@ -48,9 +48,9 @@ class UastExtractSpec extends BaseUdfSpec {
 
       extractDf.select('file_path, col(key)).collect().foreach(row => row.getString(0) match {
         case "src/foo.py" | "src/bar.java" | "foo" if Seq("@token", "foo").contains(key) =>
-          row.getAs[Seq[String]](1) should be (empty)
-        case "src/foo.py" | "src/bar.java" | "foo" => row.getAs[Seq[String]](1) should not be empty
-        case _ => row.getAs[Seq[String]](1) should be (null)
+          new String(row.getAs[Array[Byte]](1)) should be("[]")
+        case "src/foo.py" | "src/bar.java" | "foo" => row.getAs[Array[Byte]](1) should not be empty
+        case _ => row.getAs[Seq[String]](1) should be(null)
       })
 
     })

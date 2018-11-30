@@ -16,7 +16,7 @@ trait BaseGitbaseSpec extends FlatSpec with Matchers with BeforeAndAfterAll with
 
   private val resourcePath = Paths.get(getClass.getResource("/").toString)
 
-  private val gitbaseVersion = "v0.17.0"
+  private val gitbaseVersion = "v0.18.0-beta.3"
   private val gitbaseImage = "srcd/gitbase"
   private val dockerNetwork = "test-gitbase-spark-connector"
 
