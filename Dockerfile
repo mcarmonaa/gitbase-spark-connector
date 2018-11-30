@@ -1,9 +1,9 @@
 FROM openjdk:8-jdk as builder
-RUN apt-get update && apt-get install -y --no-install-recommends git
+RUN apt-get update && apt-get install -y --no-install-recommends git build-essential
 RUN mkdir /gitbase-spark-connector
 WORKDIR /gitbase-spark-connector
 COPY . /gitbase-spark-connector
-RUN ./sbt 'set test in assembly := {}' assembly
+RUN make build
 
 FROM srcd/jupyter-spark:v5.7.0
 
@@ -29,7 +29,7 @@ RUN apt-get update && \
 ENV LANG en_US.UTF-8
 
 COPY ./_examples/*.ipynb /home/$NB_USER/
-COPY --from=builder /gitbase-spark-connector/target/scala-2.11/gitbase-spark-connector-assembly-*.jar /opt/jars/
+COPY --from=builder /gitbase-spark-connector/target/gitbase-spark-connector-uber.jar /opt/jars/
 
 RUN pip install jupyter-spark \
     && jupyter serverextension enable --py jupyter_spark \
