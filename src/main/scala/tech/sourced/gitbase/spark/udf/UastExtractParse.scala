@@ -19,7 +19,7 @@ object UastExtractParse extends CustomUDF with Logging {
     jsonArray match {
       case a if a == null || a.isEmpty => None
       case a => try {
-        Some(mapper.readValue(a, classOf[Seq[String]]))
+        Option(mapper.readValue(a, classOf[Seq[String]]))
       } catch {
         case NonFatal(e) =>
           log.warn("Error trying to parse info from json array", e)
