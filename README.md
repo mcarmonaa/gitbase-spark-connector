@@ -7,7 +7,7 @@
 * [Scala](https://www.scala-lang.org/) 2.11.12
 * [Apache Spark 2.3.2 Installation](http://spark.apache.org/docs/2.3.2)
 * [gitbase](https://github.com/src-d/gitbase) >= v0.18.x
-* [bblfsh](https://github.com/bblfsh/bblfshd) >= 2.10.0
+* [bblfsh](https://github.com/bblfsh/bblfshd) >= 2.10.x
 
 ## Import as a dependency
 
