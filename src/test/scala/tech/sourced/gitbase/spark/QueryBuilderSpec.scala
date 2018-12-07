@@ -230,6 +230,15 @@ class QueryBuilderSpec extends FlatSpec with Matchers {
 
       (Cast(mkAttr("foo", "a"), IntegerType, None), "CAST(foo.`a` AS SIGNED)"),
 
+      (StartsWith(mkAttr("foo", "a"), Literal("\"foo\"", StringType)),
+        "foo.`a` REGEXP '^foo'"),
+
+      (EndsWith(mkAttr("foo", "a"), Literal("'foo'", StringType)),
+        "foo.`a` REGEXP 'foo$'"),
+
+      (Contains(mkAttr("foo", "a"), Literal("'foo'", StringType)),
+        "foo.`a` REGEXP 'foo'"),
+
       (And(
         expressions.RLike(
           mkAttr("foo", "a"),
