@@ -31,6 +31,13 @@ object QueryBuilder {
     }
   }
 
+  private def stripQuotes(str: String): String =
+    if (str.startsWith("'")) {
+      str.stripPrefix("'").stripSuffix("'")
+    } else {
+      str.stripPrefix("\"").stripSuffix("\"")
+    }
+
   // scalastyle:off cyclomatic.complexity
   def compileExpression(expr: Expression): Option[String] = {
     expr match {
@@ -64,11 +71,15 @@ object QueryBuilder {
       case RLike(left, right) =>
         compileExpression(left, right).map(x => s"${x._1} REGEXP ${x._2}")
 
-      /* TODO(erizocosmico): support this
-    case expressions.StringStartsWith(attr, value) => s"""$attr REGEXP '^$value'"""
-    case expressions.StringEndsWith(attr, value) => s"""$attr REGEXP '$value$$'"""
-    case expressions.StringContains(attr, value) => s"""$attr REGEXP '$value'"""
-    */
+      case StartsWith(attr, value) =>
+        compileExpression(attr, value)
+          .map(x => s"${x._1} REGEXP '^${stripQuotes(x._2)}'")
+      case EndsWith(attr, value) =>
+        compileExpression(attr, value)
+          .map(x => s"${x._1} REGEXP '${stripQuotes(x._2)}$$'")
+      case Contains(attr, value) =>
+        compileExpression(attr, value)
+          .map(x => s"${x._1} REGEXP '${stripQuotes(x._2)}'")
 
       case In(attr, value) if value.isEmpty =>
         compileExpression(attr)
