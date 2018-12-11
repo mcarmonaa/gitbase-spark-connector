@@ -11,7 +11,7 @@ RUN mkdir -p /opt/
 
 # engine jar location
 ENV SPARK_JARS spark.jars
-ENV SRCD_JAR /opt/jars/gitbase-spark-connector-assembly-*.jar
+ENV SRCD_JAR gitbase-spark-connector-uber.jar
 
 # bblfsh endpoint variables
 ENV SPARK_BBLFSH_HOST spark.tech.sourced.bblfsh.grpc.host
@@ -29,7 +29,7 @@ RUN apt-get update && \
 ENV LANG en_US.UTF-8
 
 COPY ./_examples/*.ipynb /home/$NB_USER/
-COPY --from=builder /gitbase-spark-connector/target/gitbase-spark-connector-uber.jar /opt/jars/
+COPY --from=builder "/gitbase-spark-connector/target/$SRCD_JAR" "/opt/jars/"
 
 RUN pip install jupyter-spark \
     && jupyter serverextension enable --py jupyter_spark \
@@ -38,7 +38,7 @@ RUN pip install jupyter-spark \
     && jupyter nbextension enable --py widgetsnbextension
 
 # Separate the config file in a different RUN creation as this may change more often
-RUN echo "$SPARK_JARS $SRCD_JAR" >> /usr/local/spark/conf/spark-defaults.conf \
+RUN echo "$SPARK_JARS /opt/jars/$SRCD_JAR" >> /usr/local/spark/conf/spark-defaults.conf \
     && echo "$SPARK_BBLFSH_HOST $BBLFSH_HOST" >> /usr/local/spark/conf/spark-defaults.conf \
     && echo "$SPARK_BBLFSH_PORT $BBLFSH_PORT" >> /usr/local/spark/conf/spark-defaults.conf
 
