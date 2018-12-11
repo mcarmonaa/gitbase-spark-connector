@@ -7,7 +7,7 @@
 * [Scala](https://www.scala-lang.org/) 2.11.12
 * [Apache Spark 2.3.2 Installation](http://spark.apache.org/docs/2.3.2)
 * [gitbase](https://github.com/src-d/gitbase) >= v0.18.x
-* [bblfsh](https://github.com/bblfsh/bblfshd) >= 2.9.1
+* [bblfsh](https://github.com/bblfsh/bblfshd) >= 2.10.x
 
 ## Import as a dependency
 
@@ -16,25 +16,26 @@ For the moment, it is served through jitpack so you can check out examples about
 ## Usage
 
 First of all, you'll need a [gitbase](https://www.github.com/src-d/gitbase) instance running. It will expose your repositories through a SQL interface.
+Gitbase depends on [bblfsh](https://github.com/bblfsh/bblfshd), to extract *UAST* (universal abstract syntax tree) from source code. For instance if you plan to filter queries by language or generally run some operations on [UASTs](https://docs.sourced.tech/babelfish/uast/uast-v2) then babelfish server is required.
 
+The most convenient way is to run all services with docker-compose. This Compose file (docker-compose.yml) defines three services (bblfshd, gitbase and gitbase-spark-connector).
+
+You can run any combination of them, e.g. (only bblfshd and gitbase):
+- Note: You must change `/path/to/repos` in `docker-compose.yml` (for gitbase volumes) to the actual path where your git repositories are located.
+
+```bash
+$ docker-compose up bblfshd gitbase
 ```
-docker run -d --name gitbase -p 3306:3306 -v /path/to/repos/directory:/opt/repos srcd/gitbase:v0.17.0
+All containers run in the same network. Babelfish server will be exposed on port `:9432`, Gitbase server is linked to Babelfish and exposed on port `:3306`, and Spark connector is linked to both (bblfsh and gitbase) and serves *Jupyter Notebook* on port `:8080`.
+
+The command:
+```bash
+$ docker-compose up
 ```
+runs all services, but first it builds a Docker image (based on Dockerfile) for `gitbase-spark-connector`.
+If all services started without any errors, you can go to `http://localhost:8080` and play with *Jupyter Notebook* to query _gitbase_ via _spark connector_.
 
-Note you must change `/path/to/repos/directory` to the actual path where your git repositories are located.
-
-Also, a [bblfsh](https://github.com/bblfsh/bblfshd) server could be needed for some operations on [UASTs](https://docs.sourced.tech/babelfish/uast/uast-v2)
-
-```
-docker run -d --name bblfshd --privileged -p 9432:9432 bblfsh/bblfshd:v2.9.1-drivers
-```
-
-You can configure where **gitbase** and **bblfsh** are listening by the environment variables:
-- `BBLFSH_HOST` (default: "0.0.0.0")
-- `BBLFSH_PORT` (default: "9432")
-- `GITBASE_SERVERS` (default: "0.0.0.0:3306")
-
-Finally you can add the gitbase `DataSource` and configuration just registering in the spark session.
+Finally you can try it out from your code. Add the gitbase `DataSource` and configuration by registering in the spark session.
 
 ```scala
 import tech.sourced.gitbase.spark.GitbaseSessionBuilder

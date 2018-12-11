@@ -1,0 +1,49 @@
+version: '3.3'
+volumes:
+    drivers:
+services:
+    bblfshd:
+        container_name: bblfshd
+        image: "bblfsh/bblfshd:v2.10.0"
+        ports:
+            - "9432:9432"
+        volumes:
+            - type: volume
+              source: drivers
+              target: /var/lib/bblfshd
+        entrypoint: ["/bin/sh"]
+        command:
+            - "-c"
+            - "bblfshd & sleep 1 && bblfshctl driver install --update --all && tail -f /dev/null"
+    gitbase:
+        container_name: gitbase
+        depends_on:
+            - bblfshd
+        links:
+            - bblfshd
+        image: "srcd/gitbase:v0.18.0-beta.3"
+        ports:
+            - "3306:3306"
+        volumes:
+            - /path/to/repos:/opt/repos
+        environment:
+            - GITBASE_USER=root
+            - GITBASE_PASSWORD=""
+            - GITBASE_REPOS=/opt/repos
+            - BBLFSH_ENDPOINT=bblfshd:9432
+    gitbase-spark-connector-jupyter:
+        container_name: gitbase-spark-connector-jupyter
+        depends_on:
+            - gitbase
+            - bblfshd
+        links:
+            - gitbase
+            - bblfshd
+        image: "srcd/gitbase-spark-connector-jupyter:latest"
+        ports:
+            - "8080:8080"
+        environment:
+            - BBLFSH_HOST=bblfshd
+            - BBLFSH_PORT=9432
+            - GITBASE_SERVERS=gitbase:3306
+
