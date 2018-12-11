@@ -11,7 +11,29 @@
 
 ## Import as a dependency
 
-For the moment, it is served through jitpack so you can check out examples about how to import it in your project [here](https://jitpack.io/#src-d/gitbase-spark-connector).
+Maven:
+
+```xml
+<dependency>
+  <groupId>tech.sourced</groupId>
+  <artifactId>gitbase-spark-connector</artifactId>
+  <version>[version]</version>
+  <type>slim</type>
+</dependency>
+```
+
+SBT:
+
+```scala
+libraryDependencies += "tech.sourced" % "gitbase-spark-connector" % "[version]" classifier "slim"
+```
+
+Note the `slim` type or classifier. 
+This is intended to make possible use this data source as a library.
+If you don't add it, the retrieved jar will have all the needed dependencies included (fat-jar or uber-jar). 
+That might cause dependency conflicts in your application.
+
+You can check the available versions [here](https://search.maven.org/search?q=a:gitbase-spark-connector).
 
 ## Usage
 
