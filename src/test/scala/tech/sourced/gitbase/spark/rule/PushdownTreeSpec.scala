@@ -1,6 +1,7 @@
 package tech.sourced.gitbase.spark.rule
 
-import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, CaseKeyWhen, Descending, EqualTo, Literal, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{
+  Alias, Ascending, Attribute, CaseKeyWhen, Descending, EqualTo, Literal, SortOrder}
 import org.apache.spark.sql.catalyst.plans.logical
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
 import org.apache.spark.sql.types.{IntegerType, StringType, StructField, StructType}
@@ -55,8 +56,9 @@ class PushdownTreeSpec extends BaseRuleSpec {
     )
 
     val result = PushdownTree(node)
-    result.isInstanceOf[DataSourceV2Relation] should be(true)
-    val rel = result.asInstanceOf[DataSourceV2Relation]
+    result.isInstanceOf[logical.Project] should be(true)
+    val relationChild = result.asInstanceOf[logical.Project].child
+    val rel = relationChild.asInstanceOf[DataSourceV2Relation]
     rel.output.map(_.name) should equal(Seq("a", "b"))
     val reader = rel.reader.asInstanceOf[DefaultReader]
     reader.node.isInstanceOf[Project] should be(true)

@@ -2,11 +2,7 @@ package tech.sourced.gitbase.spark.rule
 
 import org.apache.spark.SparkException
 import org.apache.spark.sql.catalyst.expressions.{
-  And,
-  AttributeReference,
-  Expression,
-  Literal,
-  NamedExpression
+  Alias, And, AttributeReference, Expression, Literal, NamedExpression
 }
 import org.apache.spark.sql.catalyst.plans.logical
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
@@ -19,30 +15,42 @@ object PushdownTree extends Rule[LogicalPlan] {
 
   /** @inheritdoc*/
   def apply(plan: LogicalPlan): LogicalPlan = plan transformUp {
+    case logical.Project(exp1, logical.Project(exp2, child))
+      if containsDuplicates(exp1 ++ exp2) =>
+      fixAttributeReferences(logical.Project(exp1 ++ exp2, child))
     case logical.Project(Seq(), child) => child
-
     case n@logical.Project(
-    list,
+    projectExpressions,
     r@DataSourceV2Relation(_, DefaultReader(servers, _, query))) =>
       if (containsGroupBy(query)) {
         r
-      } else if (!canBeHandled(list) || containsDuplicates(list)) {
+      } else if (containsDuplicates(projectExpressions)) {
         fixAttributeReferences(n)
-      } else {
+      } else if (!query.hasProjection) {
+        // Split expressions in supported and unsupported to push down
+        // only the supported ones and keep upside the unsupported
+        val (supportedProject, unsupportedProject) =
+        splitSupportedAndUnsupportedExpressions(projectExpressions)
+
         val newSchema = StructType(
-          list.map(e => StructField(e.name, e.dataType, e.nullable, e.metadata))
+          supportedProject.map(e => StructField(e.name, e.dataType, e.nullable, e.metadata))
         )
-        val newOutput = list.map(e =>
+        val newOutput = supportedProject.map(e =>
           AttributeReference(e.name, e.dataType, e.nullable, e.metadata)()
         )
-        DataSourceV2Relation(
-          newOutput,
-          DefaultReader(
-            servers,
-            newSchema,
-            Project(list, query)
+
+        logical.Project(unsupportedProject,
+          DataSourceV2Relation(
+            newOutput,
+            DefaultReader(
+              servers,
+              newSchema,
+              Project(supportedProject, query)
+            )
           )
         )
+      } else {
+        n
       }
 
     case n@logical.Filter(
@@ -102,6 +110,13 @@ object PushdownTree extends Rule[LogicalPlan] {
     case node => fixAttributeReferences(node)
   }
 
+  private def toNamedExpression(expression: Expression): NamedExpression = {
+    expression match {
+      case e: NamedExpression => e
+      case e => Alias(e, e.toString())()
+    }
+  }
+
   private def splitExpressions(expression: Expression): Seq[Expression] = {
     expression match {
       case And(left, right) =>
@@ -118,4 +133,48 @@ object PushdownTree extends Rule[LogicalPlan] {
     exprs.groupBy(_.name).values.map(_.length).exists(_ > 1)
   }
 
+  /**
+    * Split expressions in supported and unsupported to push down
+    * only the supported ones and keep upside the unsupported
+    */
+  private def splitSupportedAndUnsupportedExpressions(expressions: Seq[NamedExpression]):
+  (Seq[NamedExpression], Seq[NamedExpression]) = {
+    val (s, u) = expressions.map { exp =>
+      var supported: Seq[NamedExpression] = Nil
+      var unsupported: Option[NamedExpression] = None
+      exp.foreach {
+        // this expression cannot be handled but its children can
+        case e if !canBeHandled(e :: Nil) && canBeHandled(e.children) && unsupported.isEmpty =>
+          val (supportedExp, supportedReference) =
+            e.children.map { e =>
+              val namedExpression = toNamedExpression(e)
+              (namedExpression,
+                AttributeReference(
+                  namedExpression.name,
+                  namedExpression.dataType,
+                  namedExpression.nullable,
+                  namedExpression.metadata)()
+              )
+            }.unzip
+
+          val unsupportedNamedExp = toNamedExpression(e.withNewChildren(supportedReference))
+
+          supported = supportedExp
+          unsupported = Some(unsupportedNamedExp)
+        // this expression can be handled and it have no children
+        case e if canBeHandled(e :: Nil) && unsupported.isEmpty =>
+          val namedExp = toNamedExpression(e)
+          supported = Seq(namedExp)
+          unsupported = Some(
+            AttributeReference(
+              namedExp.name, namedExp.dataType, namedExp.nullable, namedExp.metadata)())
+        case _ =>
+      }
+
+      (supported, unsupported
+        .getOrElse(throw new SparkException("No unsupported expressions on the query")))
+    }.unzip
+
+    (s.flatten, u)
+  }
 }
