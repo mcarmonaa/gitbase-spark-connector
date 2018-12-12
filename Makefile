@@ -56,6 +56,10 @@ ifneq ($(TRAVIS_PULL_REQUEST), false)
         pushdisabled = "push disabled for pull-requests"
 endif
 
+# IS_RELEASE is "true" if tag is semantic version and not a pre-release
+IS_RELEASE := $(shell echo -n $(VERSION) | grep -q -E '^v[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+$$' && echo "true" || true)
+LATEST_GIT_TAG := $(shell git tag --sort=v:refname | tail -n1 | xargs echo -n)
+
 #SBT
 SBT = ./sbt ++$(SCALA_VERSION) -Dspark.version=$(SPARK_VERSION)
 
@@ -90,7 +94,7 @@ docker-push: docker-build
 	fi;
 
 	$(DOCKER_PUSH) $(call unescape_docker_tag,$(JUPYTER_IMAGE_VERSIONED))
-	@if [ "$$TRAVIS_TAG" != "" ]; then \
+	if [ "$$TRAVIS_TAG" != "" ] && [ $$IS_RELEASE ] && [ "$$LATEST_GIT_TAG" == "$$TRAVIS_TAG" ]; then \
 		$(DOCKER_TAG) $(call unescape_docker_tag,$(JUPYTER_IMAGE_VERSIONED)) \
 			$(call unescape_docker_tag,$(JUPYTER_IMAGE)):latest; \
 		$(DOCKER_PUSH) $(call unescape_docker_tag,$(JUPYTER_IMAGE):latest); \
